@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -61,15 +62,21 @@ describe("managed GitHub profile startup cleanup", () => {
         env,
       });
       await fs.mkdir(path.join(systemRoot, "unexpected-entry"), { recursive: true });
-      const agentIds = ["first", "middle", "last"].sort((left, right) =>
+      const agentIds = ["first", "middle", "last"].toSorted((left, right) =>
         resolveManagedGitHubAgentKey(left).localeCompare(resolveManagedGitHubAgentKey(right)),
       );
       const agentRoots = agentIds.map((agentId) =>
         resolveManagedGitHubProfileRoot({ agentId, scope: "agent", env }),
       );
+      const [firstRoot, middleRoot, lastRoot] = agentRoots;
+      assert(firstRoot && middleRoot && lastRoot);
       const profileId = "ghp_11111111111111111111111111111111";
-      const profiles = await Promise.all(agentRoots.map((root) => createProfile(root, profileId)));
-      directoryReadState.unreadablePath = agentRoots[1];
+      const [firstProfile, middleProfile, lastProfile] = await Promise.all([
+        createProfile(firstRoot, profileId),
+        createProfile(middleRoot, profileId),
+        createProfile(lastRoot, profileId),
+      ]);
+      directoryReadState.unreadablePath = middleRoot;
       directoryReadState.errorCode = errorCode;
 
       const result = await cleanupRetiredManagedGitHubProfiles({
@@ -78,20 +85,22 @@ describe("managed GitHub profile startup cleanup", () => {
       });
 
       expect(result.removed).toBe(2);
-      const readOrder = agentRoots.map((root) => directoryReadState.readPaths.indexOf(root));
-      expect(readOrder[0]).toBeGreaterThanOrEqual(0);
-      expect(readOrder[0]).toBeLessThan(readOrder[1]);
-      expect(readOrder[1]).toBeLessThan(readOrder[2]);
+      const firstRead = directoryReadState.readPaths.indexOf(firstRoot);
+      const middleRead = directoryReadState.readPaths.indexOf(middleRoot);
+      const lastRead = directoryReadState.readPaths.indexOf(lastRoot);
+      expect(firstRead).toBeGreaterThanOrEqual(0);
+      expect(firstRead).toBeLessThan(middleRead);
+      expect(middleRead).toBeLessThan(lastRead);
       expect(result.warnings).toEqual([
         `ignored unexpected managed GitHub profile entry: ${path.join(systemRoot, "unexpected-entry")}`,
-        expect.stringContaining(agentRoots[1]),
+        expect.stringContaining(middleRoot),
       ]);
       expect(result.warnings[1]).toContain("directory is unavailable");
-      await expect(fs.readFile(path.join(profiles[1], "hosts.yml"), "utf8")).resolves.toBe(
+      await expect(fs.readFile(path.join(middleProfile, "hosts.yml"), "utf8")).resolves.toBe(
         "github.com:\n",
       );
-      for (const index of [0, 2]) {
-        await expect(fs.stat(profiles[index])).rejects.toMatchObject({ code: "ENOENT" });
+      for (const profile of [firstProfile, lastProfile]) {
+        await expect(fs.stat(profile)).rejects.toMatchObject({ code: "ENOENT" });
       }
     },
   );
