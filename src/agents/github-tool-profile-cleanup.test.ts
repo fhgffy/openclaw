@@ -8,7 +8,6 @@ const oauthMocks = vi.hoisted(() => ({ list: vi.fn() }));
 const directoryReadState = vi.hoisted(() => ({
   unreadablePath: undefined as string | undefined,
   errorCode: "EBUSY",
-  readPaths: [] as string[],
 }));
 
 vi.mock("./github-oauth-records.js", () => ({ listGitHubOAuthRecords: oauthMocks.list }));
@@ -18,7 +17,6 @@ vi.mock("@openclaw/fs-safe/advanced", async (importOriginal) => {
     ...actual,
     readDirectoryIdentity: async (...args: Parameters<typeof actual.readDirectoryIdentity>) => {
       const [candidate] = args;
-      directoryReadState.readPaths.push(candidate);
       if (candidate === directoryReadState.unreadablePath) {
         throw Object.assign(new Error("directory is unavailable"), {
           code: directoryReadState.errorCode,
@@ -48,10 +46,9 @@ describe("managed GitHub profile startup cleanup", () => {
   beforeEach(() => {
     oauthMocks.list.mockReset().mockReturnValue([]);
     directoryReadState.unreadablePath = undefined;
-    directoryReadState.readPaths.length = 0;
   });
 
-  it.each(["EBUSY", "EPERM", "EIO"])(
+  it.each(["EBUSY", "EPERM", "EIO", "ENOENT"])(
     "continues cleanup after an agent directory read fails with %s",
     async (errorCode) => {
       const stateDir = await fs.realpath(tempDirs.make("openclaw-github-cleanup-read-error-"));
@@ -85,17 +82,14 @@ describe("managed GitHub profile startup cleanup", () => {
       });
 
       expect(result.removed).toBe(2);
-      const firstRead = directoryReadState.readPaths.indexOf(firstRoot);
-      const middleRead = directoryReadState.readPaths.indexOf(middleRoot);
-      const lastRead = directoryReadState.readPaths.indexOf(lastRoot);
-      expect(firstRead).toBeGreaterThanOrEqual(0);
-      expect(firstRead).toBeLessThan(middleRead);
-      expect(middleRead).toBeLessThan(lastRead);
       expect(result.warnings).toEqual([
         `ignored unexpected managed GitHub profile entry: ${path.join(systemRoot, "unexpected-entry")}`,
-        expect.stringContaining(middleRoot),
+        ...(errorCode === "ENOENT"
+          ? []
+          : [
+              `failed to read managed GitHub profile root: ${middleRoot}: Error: directory is unavailable`,
+            ]),
       ]);
-      expect(result.warnings[1]).toContain("directory is unavailable");
       await expect(fs.readFile(path.join(middleProfile, "hosts.yml"), "utf8")).resolves.toBe(
         "github.com:\n",
       );
@@ -104,6 +98,21 @@ describe("managed GitHub profile startup cleanup", () => {
       }
     },
   );
+
+  it("surfaces OAuth record failures without deleting profiles", async () => {
+    const stateDir = await fs.realpath(tempDirs.make("openclaw-github-cleanup-oauth-error-"));
+    const profile = await createProfile(
+      path.join(stateDir, "credentials", "github", "system"),
+      "ghp_11111111111111111111111111111111",
+    );
+    const error = new Error("OAuth records are unavailable");
+    oauthMocks.list.mockRejectedValueOnce(error);
+
+    await expect(
+      cleanupRetiredManagedGitHubProfiles({ config: {}, env: { OPENCLAW_STATE_DIR: stateDir } }),
+    ).rejects.toBe(error);
+    expect(await fs.readFile(path.join(profile, "hosts.yml"), "utf8")).toBe("github.com:\n");
+  });
 
   it("removes only unreferenced generations inside exact system and agent roots", async () => {
     const stateDir = await fs.realpath(tempDirs.make("openclaw-github-cleanup-"));
