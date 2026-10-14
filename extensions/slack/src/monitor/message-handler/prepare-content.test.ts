@@ -1,7 +1,8 @@
+import type { RichTextElement } from "@slack/types";
 import { describe, expect, it } from "vitest";
 import { resolveSlackMessageContent } from "./prepare-content.js";
 
-function resolveRichTextContent(elements: unknown[]) {
+function resolveRichTextContent(elements: RichTextElement[]) {
   return resolveSlackMessageContent({
     message: {
       type: "message",
@@ -54,9 +55,12 @@ describe("Slack rich-text date content", () => {
   it.each([undefined, null, "1700000000", Number.NaN, Number.POSITIVE_INFINITY, 1e20])(
     "ignores an invalid date timestamp %s without losing other text",
     async (timestamp) => {
+      const date: RichTextElement = { type: "date", timestamp: 0, format: "{date_short}" };
+      // Deliberately violate the SDK type to exercise malformed runtime payloads.
+      Reflect.set(date, "timestamp", timestamp);
       const result = await resolveRichTextContent([
         { type: "text", text: "Before " },
-        { type: "date", timestamp, format: "{date_short}" },
+        date,
         { type: "text", text: "after" },
       ]);
 
