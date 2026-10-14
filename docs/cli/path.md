@@ -209,7 +209,9 @@ depending on the per-kind AST shape.
   leaves. Values are literal, including `$1`, `$&`, and `$$`. Markdown
   insertions append sections, frontmatter keys, or section items and render a
   standard Markdown format for the changed file. Section bodies are not
-  writable as a whole through `set`.
+  writable as a whole through `set`. Body edits and insertions preserve the
+  original frontmatter block, including multiline values, nested metadata, and
+  comments.
 - JSONC leaf writes coerce the string value to the existing leaf type
   (`string`, finite `number`, `true`/`false`, or `null`). Use `--value-json`
   when a JSONC/JSON/JSONL leaf replacement should parse `<value>` as JSON and

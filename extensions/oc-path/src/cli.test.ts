@@ -368,6 +368,38 @@ describe("openclaw path CLI", () => {
   });
 
   describe("set", () => {
+    it.each([
+      ["field edit", "oc://SKILL.md/tools/command/command", "new", "- command: new"],
+      ["item insertion", "oc://SKILL.md/tools/+", "added: value", "- added: value"],
+      ["section insertion", "oc://SKILL.md/+", "Added", "## Added"],
+    ])(
+      "preserves unrelated frontmatter during a Markdown %s",
+      async (_label, target, value, expectedBody) => {
+        const workspaceDir = tempDirs.make("oc-path-cli-");
+        const filePath = join(workspaceDir, "SKILL.md");
+        const frontmatter = [
+          "---",
+          "# Keep the authored metadata and multiline description.",
+          "name: example",
+          "description: |",
+          "  First line.",
+          "  Second line.",
+          "metadata:",
+          "  openclaw:",
+          "    requires:",
+          "      bins: [gh]",
+          "---",
+        ].join("\r\n");
+        writeFileSync(filePath, `${frontmatter}\r\n\r\n## Tools\r\n- command: old\r\n`);
+        const rt = createTestRuntime();
+        await pathSetCommand(target, value, { cwd: workspaceDir, json: true }, rt);
+
+        expect(rt.exitCode, stderrText(rt)).toBe(0);
+        const after = readFileSync(filePath, "utf8");
+        expect(after.slice(0, frontmatter.length)).toBe(frontmatter);
+        expect(after).toContain(expectedBody);
+      },
+    );
     it("CLI-S09 refuses an undecodable file instead of rewriting untouchable bytes", async () => {
       const workspaceDir = tempDirs.make("oc-path-cli-");
       const filePath = join(workspaceDir, "gateway.jsonc");

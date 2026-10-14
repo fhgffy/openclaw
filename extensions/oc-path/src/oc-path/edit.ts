@@ -40,7 +40,10 @@ export function setMdOcPath(ast: MdAst, path: OcPath, newValue: string): MdEditR
     const newEntry: FrontmatterEntry = { ...existing, value: newValue };
     const newFm = ast.frontmatter.slice();
     newFm[idx] = newEntry;
-    return { ok: true, ast: rebuildMdRaw({ ...ast, frontmatter: newFm }) };
+    return {
+      ok: true,
+      ast: rebuildMdRaw({ ...ast, frontmatter: newFm, frontmatterRaw: undefined }),
+    };
   }
 
   if (path.section === undefined || path.item === undefined || path.field === undefined) {

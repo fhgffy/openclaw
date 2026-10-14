@@ -54,6 +54,8 @@ export interface MdAst {
   readonly kind: "md";
   readonly raw: string;
   readonly frontmatter: readonly FrontmatterEntry[];
+  /** Original frontmatter block, retained until a frontmatter edit replaces it. */
+  readonly frontmatterRaw?: string;
   readonly preamble: string;
   readonly blocks: readonly AstBlock[];
 }

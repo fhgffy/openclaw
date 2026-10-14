@@ -484,6 +484,7 @@ function setMdInsertion(ast: MdAst, info: InsertionInfo, value: string): SetResu
     const newAst: MdAst = {
       ...ast,
       frontmatter: [...ast.frontmatter, { key, value, line: 0 }],
+      frontmatterRaw: undefined,
     };
     return { ok: true, ast: rebuildMdRaw(newAst) };
   }

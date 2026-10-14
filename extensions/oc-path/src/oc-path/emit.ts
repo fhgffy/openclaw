@@ -9,7 +9,11 @@ export function rebuildMdRaw(ast: MdAst): MdAst {
     parts.push(text);
     nextLine += text.split("\n").length;
   };
-  if (ast.frontmatter.length > 0) {
+  if (ast.frontmatterRaw !== undefined) {
+    // The addressing index omits nested YAML, block scalars, and comments.
+    // Body edits must not reconstruct unrelated frontmatter from that index.
+    append(ast.frontmatterRaw);
+  } else if (ast.frontmatter.length > 0) {
     append("---");
     for (const fm of ast.frontmatter) {
       append(`${fm.key}: ${formatFrontmatterValue(fm.value)}`);
