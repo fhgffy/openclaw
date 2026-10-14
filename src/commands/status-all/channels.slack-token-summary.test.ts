@@ -7,7 +7,8 @@ import { buildChannelsTable } from "./channels.js";
 
 const discovery = vi.hoisted(() => ({ resolve: vi.fn() }));
 
-vi.mock("../../channels/plugins/read-only.js", () => ({
+vi.mock("../../channels/plugins/read-only.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../channels/plugins/read-only.js")>()),
   resolveReadOnlyChannelPluginsForConfig: discovery.resolve,
 }));
 
@@ -194,6 +195,35 @@ describe("Slack status credential summaries", () => {
     expect(incomplete.rows[0]?.detail).not.toContain("app");
     expect(incomplete.details).toEqual([]);
   });
+
+  it.each(["bot", "user"] as const)(
+    "reports the selected %s relay identity's environment fallback source",
+    async (postAs) => {
+      vi.stubEnv(
+        postAs === "user" ? "SLACK_USER_TOKEN" : "SLACK_BOT_TOKEN",
+        postAs === "user" ? userToken : botToken,
+      );
+      const otherToken = postAs === "user" ? { botToken } : { userToken };
+      const table = await tableFor({ default: { mode: "relay", postAs, relay, ...otherToken } });
+      expect(table.rows[0]).toMatchObject({ state: "ok" });
+      expect(table.rows[0]?.detail).toContain(`${postAs} token env`);
+      expect(table.details[0]?.rows[0]?.Notes).toContain(`${postAs}:env`);
+      expect(JSON.stringify(table)).not.toContain(userToken);
+      expect(JSON.stringify(table)).not.toContain(botToken);
+    },
+  );
+
+  it.each(["bot", "user"] as const)(
+    "keeps explicit %s relay credentials authoritative over environment fallback",
+    async (postAs) => {
+      vi.stubEnv(postAs === "user" ? "SLACK_USER_TOKEN" : "SLACK_BOT_TOKEN", "synthetic-env-token");
+      const token = postAs === "user" ? { userToken } : { botToken };
+      const table = await tableFor({ default: { mode: "relay", postAs, relay, ...token } });
+      expect(table.rows[0]).toMatchObject({ state: "ok" });
+      expect(table.rows[0]?.detail).toContain(`${postAs} token config`);
+      expect(table.details[0]?.rows[0]?.Notes).toContain(`${postAs}:config`);
+    },
+  );
 
   it("ignores disabled accounts when selecting credential requirements", async () => {
     const table = await tableFor({

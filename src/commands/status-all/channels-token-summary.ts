@@ -182,9 +182,13 @@ export function summarizeTokenConfig(params: {
     };
   }
 
-  const source = hasBotTokenField
-    ? "config"
-    : summarizeSources(ready.map((a) => a.snapshot.tokenSource));
+  const source = relayMode
+    ? summarizeSources(
+        ready.map((a) => a.snapshot[userIdentity ? "userTokenSource" : "botTokenSource"] ?? "none"),
+      )
+    : hasBotTokenField
+      ? "config"
+      : summarizeSources(ready.map((a) => a.snapshot.tokenSource));
   const hint = tokenHint(ready[0]?.account, tokenKey);
   return {
     state: "ok",
