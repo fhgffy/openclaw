@@ -16,6 +16,7 @@ import { DiscordThreadInitialMessageError } from "../send.js";
 import * as discordGuildActionRuntime from "../send.js";
 import { resolveDiscordTargetChannelId } from "../send.shared.js";
 import { createDiscordLoopbackRest } from "../send.test-harness.js";
+import { tryHandleDiscordMessageActionGuildAdmin } from "./handle-action.guild-admin.js";
 import { handleDiscordMessageAction } from "./handle-action.js";
 import { handleDiscordGuildAction } from "./runtime.guild.js";
 import { handleDiscordAction } from "./runtime.js";
@@ -1558,34 +1559,89 @@ describe("handleDiscordGuildAction", () => {
     {
       label: "resolves the guild from the current channel",
       params: {},
+      currentChannelId: "channel:123",
       expectedGuildId: "current-guild",
       resolvesChannel: true,
     },
     {
-      label: "prefers an explicit guild over the current channel",
+      label: "uses an explicit guild from a DM",
       params: { guildId: "explicit-guild" },
+      currentChannelId: "user:456",
       expectedGuildId: "explicit-guild",
       resolvesChannel: false,
     },
-  ])("$label for emoji-list", async ({ params, expectedGuildId, resolvesChannel }) => {
-    if (resolvesChannel) {
-      fetchChannelInfoDiscord.mockResolvedValueOnce({
-        id: "123",
-        type: ChannelType.GuildText,
-        guild_id: "current-guild",
-      });
-    }
+    ...["channelId", "to"].map((key) => ({
+      label: `uses an explicit ${key} from a DM`,
+      params: { [key]: "channel:123" },
+      currentChannelId: "user:456",
+      expectedGuildId: "current-guild",
+      resolvesChannel: true,
+    })),
+  ])(
+    "$label for emoji-list",
+    async ({ params, currentChannelId, expectedGuildId, resolvesChannel }) => {
+      if (resolvesChannel) {
+        fetchChannelInfoDiscord.mockResolvedValueOnce({
+          id: "123",
+          type: ChannelType.GuildText,
+          guild_id: "current-guild",
+        });
+      }
 
-    const result = await handleDiscordMessageAction({
-      action: "emoji-list",
-      params,
-      cfg: DISCORD_TEST_CFG,
-      toolContext: { currentChannelProvider: "discord", currentChannelId: "channel:123" },
+      const result = await handleDiscordMessageAction({
+        action: "emoji-list",
+        params,
+        cfg: DISCORD_TEST_CFG,
+        toolContext: { currentChannelProvider: "discord", currentChannelId },
+      });
+
+      expect(result.details).toEqual({ ok: true, emojis: [] });
+      expect(listGuildEmojisDiscord).toHaveBeenCalledWith(expectedGuildId, {
+        cfg: DISCORD_TEST_CFG,
+      });
+      expect(fetchChannelInfoDiscord).toHaveBeenCalledTimes(resolvesChannel ? 1 : 0);
+    },
+  );
+
+  it("supports resolver-only callers of the exported guild-admin helper", async () => {
+    const result = await tryHandleDiscordMessageActionGuildAdmin({
+      ctx: { action: "emoji-list", params: {}, cfg: DISCORD_TEST_CFG },
+      resolveChannelId: () => "123",
+      actionOptions: {},
     });
 
-    expect(result.details).toEqual({ ok: true, emojis: [] });
-    expect(listGuildEmojisDiscord).toHaveBeenCalledWith(expectedGuildId, { cfg: DISCORD_TEST_CFG });
-    expect(fetchChannelInfoDiscord).toHaveBeenCalledTimes(resolvesChannel ? 1 : 0);
+    expect(result?.details).toEqual({ ok: true, emojis: [] });
+    expect(fetchChannelInfoDiscord).toHaveBeenCalledWith("123", { cfg: DISCORD_TEST_CFG });
+    expect(listGuildEmojisDiscord).toHaveBeenCalledWith("G1", { cfg: DISCORD_TEST_CFG });
+  });
+
+  it.each(["user:456", "discord:user:456", undefined])(
+    "requests a guild or server channel for emoji-list with current target %s",
+    async (currentChannelId) => {
+      await expect(
+        handleDiscordMessageAction({
+          action: "emoji-list",
+          params: {},
+          cfg: DISCORD_TEST_CFG,
+          toolContext: { currentChannelProvider: "discord", currentChannelId },
+        }),
+      ).rejects.toThrow("Discord emoji listing requires guildId or a server channel.");
+      expect(fetchChannelInfoDiscord).not.toHaveBeenCalled();
+      expect(listGuildEmojisDiscord).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps emoji-list reaction gating when the current target is a DM", async () => {
+    await expect(
+      handleDiscordMessageAction({
+        action: "emoji-list",
+        params: {},
+        cfg: discordCfg({ token: "token", actions: { reactions: false } }),
+        toolContext: { currentChannelProvider: "discord", currentChannelId: "user:456" },
+      }),
+    ).rejects.toThrow("Discord reactions are disabled.");
+    expect(fetchChannelInfoDiscord).not.toHaveBeenCalled();
+    expect(listGuildEmojisDiscord).not.toHaveBeenCalled();
   });
 
   it("reuses the gateway-owned normalized emoji list across requests with different limits", async () => {
