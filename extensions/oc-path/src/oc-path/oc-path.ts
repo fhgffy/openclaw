@@ -250,6 +250,7 @@ export function formatOcPath(path: OcPath): string {
   const formatSubSegment = (sub: string): string => {
     if (
       isQuotedSeg(sub) ||
+      isPositionalSeg(sub) ||
       (sub.startsWith("[") && sub.endsWith("]")) ||
       (sub.startsWith("{") && sub.endsWith("}"))
     ) {
@@ -608,11 +609,9 @@ export function splitRespectingBrackets(
   return out;
 }
 
-/** Flatten concrete path slots while preserving quoted keys as one segment. */
+/** Flatten path slots without losing the distinction between quoted keys and selectors. */
 export function splitOcPathSlots(...slots: readonly (string | undefined)[]): string[] {
-  return slots.flatMap((slot) =>
-    slot === undefined ? [] : splitRespectingBrackets(slot, ".").map(unquoteSeg),
-  );
+  return slots.flatMap((slot) => (slot === undefined ? [] : splitRespectingBrackets(slot, ".")));
 }
 
 function isQuotedSeg(seg: string): boolean {
@@ -636,7 +635,7 @@ export function quoteSeg(value: string): string {
       "OC_PATH_UNQUOTABLE",
     );
   }
-  return /[/.[\]{}?&%\s]/.test(value) ? `"${value}"` : value;
+  return isPositionalSeg(value) || /[/.[\]{}?&%\s]/.test(value) ? `"${value}"` : value;
 }
 
 function validateSubSegment(sub: string, input: string): void {

@@ -164,7 +164,7 @@ all four slots:
   recursive). `find` accepts these; `resolve` and `set` reject them as
   ambiguous.
 - **Positional** — `$first` / `$last` resolve to the first / last index or
-  declared key.
+  declared key. Quote them (`"$first"` / `"$last"`) to address literal keys with those names.
 - **Ordinal** — `#N` for the Nth match by document order.
 - **Insertion markers** — `+`, `+key`, `+nnn` for keyed / indexed insertion
   (use with `set`).

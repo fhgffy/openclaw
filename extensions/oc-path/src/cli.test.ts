@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { Command, CommanderError } from "commander";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parse as parseYaml } from "yaml";
 import { registerOcPathCli } from "../cli-registration.js";
 import { registerPathCli } from "./cli.js";
 
@@ -228,6 +229,73 @@ describe("openclaw path CLI", () => {
       expect(out.valid).toBe(false);
     });
   });
+
+  it.each(["jsonc", "jsonl", "yaml"])(
+    "keeps quoted positional keys literal in %s CLI reads and writes",
+    async (kind) => {
+      const workspaceDir = tempDirs.make("oc-path-cli-");
+      const filename = `config.${kind}`;
+      const filePath = join(workspaceDir, filename);
+      const expected = { items: { head: "keep-first", $first: 7, $last: 9, tail: "keep-last" } };
+      writeFileSync(filePath, JSON.stringify(expected), "utf-8");
+      const options = { cwd: workspaceDir, json: true };
+      const prefix = `oc://${filename}/${kind === "jsonl" ? "L1/" : ""}items`;
+      const readSaved = (raw: string) => (kind === "yaml" ? parseYaml(raw) : JSON.parse(raw));
+
+      for (const [token, value] of [
+        ["$first", "keep-first"],
+        ["$last", "keep-last"],
+      ]) {
+        const rt = createTestRuntime();
+        await pathResolveCommand(`${prefix}/${token}`, options, rt);
+        expect(rt.exitCode).toBe(0);
+        expect(JSON.parse(stdoutText(rt)).match).toMatchObject({ valueText: value });
+      }
+      for (const [key, value] of [
+        ["$first", 7],
+        ["$last", 9],
+      ] as const) {
+        const path = `${prefix}."${key}"`;
+        const rt = createTestRuntime();
+        await pathResolveCommand(path, options, rt);
+        expect(rt.exitCode).toBe(0);
+        expect(JSON.parse(stdoutText(rt)).match).toMatchObject({
+          kind: "leaf",
+          valueText: String(value),
+          leafType: "number",
+        });
+        const before = readFileSync(filePath, "utf-8");
+        expected.items[key] = 42;
+        const preview = createTestRuntime();
+        await pathSetCommand(path, "42", { ...options, dryRun: true }, preview);
+        expect(preview.exitCode).toBe(0);
+        expect(readSaved(JSON.parse(stdoutText(preview)).bytes)).toEqual(expected);
+        expect(readFileSync(filePath, "utf-8")).toBe(before);
+        const written = createTestRuntime();
+        await pathSetCommand(path, "42", options, written);
+        expect(written.exitCode).toBe(0);
+        expect(readSaved(readFileSync(filePath, "utf-8"))).toEqual(expected);
+      }
+
+      const found = createTestRuntime();
+      await pathFindCommand(`${prefix}/*`, options, found);
+      expect(found.exitCode).toBe(0);
+      expect(JSON.parse(stdoutText(found)).matches).toMatchObject([
+        { path: `${prefix}/head`, match: { valueText: "keep-first" } },
+        { path: `${prefix}/"$first"`, match: { valueText: "42", leafType: "number" } },
+        { path: `${prefix}/"$last"`, match: { valueText: "42", leafType: "number" } },
+        { path: `${prefix}/tail`, match: { valueText: "keep-last" } },
+      ]);
+
+      writeFileSync(filePath, '{"items":{"$last":10,"tail":20}}', "utf-8");
+      const positional = createTestRuntime();
+      await pathFindCommand(`${prefix}/$first`, options, positional);
+      expect(positional.exitCode).toBe(0);
+      expect(JSON.parse(stdoutText(positional)).matches).toMatchObject([
+        { path: `${prefix}/"$last"`, match: { valueText: "10", leafType: "number" } },
+      ]);
+    },
+  );
 
   describe("resolve", () => {
     it("CLI-R04 finds a leaf in yaml and prints it", async () => {

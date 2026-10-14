@@ -391,7 +391,13 @@ const yamlOps: WalkOps<Node> = {
   },
   positional(node, seg) {
     const concrete = resolveYamlPositionalSegment(node, seg);
-    return concrete === null ? null : yamlOps.lookup(node, concrete);
+    if (concrete === null) {
+      return null;
+    }
+    const match = yamlOps.lookup(node, concrete);
+    return match !== null && isMap(node)
+      ? { keySub: quoteSeg(concrete), child: match.child }
+      : match;
   },
   *predicate(node, pred) {
     yield* yamlOps.enumerate(node, (child) =>
