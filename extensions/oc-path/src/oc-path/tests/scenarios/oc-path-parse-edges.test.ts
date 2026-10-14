@@ -18,6 +18,14 @@ describe("oc-path-parse-edges", () => {
       "oc://X.md/a/b/c?session=s",
       "oc://skills/email-drafter/[frontmatter]/name",
       "oc://config/plugins.entries.foo.token",
+      "oc://config.jsonc/items/*",
+      "oc://config.jsonc/**/name",
+      "oc://config.jsonc/items.*.name",
+      'oc://config.jsonc/"*"',
+      'oc://config.jsonc/"**"',
+      "oc://config.jsonc/paths/+*",
+      "oc://config.jsonc/paths/+**",
+      "oc://config.jsonc/paths/types*",
     ];
     for (const c of cases) {
       expect(formatOcPath(parseOcPath(c)), `round-trip failed for ${c}`).toBe(c);

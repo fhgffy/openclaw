@@ -250,6 +250,8 @@ export function formatOcPath(path: OcPath): string {
   const formatSubSegment = (sub: string): string => {
     if (
       isQuotedSeg(sub) ||
+      sub === WILDCARD_SINGLE ||
+      sub === WILDCARD_RECURSIVE ||
       (sub.startsWith("[") && sub.endsWith("]")) ||
       (sub.startsWith("{") && sub.endsWith("}"))
     ) {
@@ -636,7 +638,9 @@ export function quoteSeg(value: string): string {
       "OC_PATH_UNQUOTABLE",
     );
   }
-  return /[/.[\]{}?&%\s]/.test(value) ? `"${value}"` : value;
+  return value === WILDCARD_SINGLE || value === WILDCARD_RECURSIVE || /[/.[\]{}?&%\s]/.test(value)
+    ? `"${value}"`
+    : value;
 }
 
 function validateSubSegment(sub: string, input: string): void {
