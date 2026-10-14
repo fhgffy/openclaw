@@ -23,9 +23,8 @@ export function parseJsonl(raw: string): JsonlParseResult {
   // count CRLF occurrences and call CRLF if the majority of newlines
   // are CRLF — this handles mixed-ending files (e.g., a Unix log
   // edited once on Windows) by picking the dominant convention.
-  // Without this, `setJsonlOcPath` rebuilds a CRLF input via render
-  // mode which joins with `\n`, producing mixed endings on a
-  // previously-CRLF file.
+  // Render mode and appending to an unterminated file use this convention;
+  // targeted edits preserve each existing separator verbatim.
   const crlfCount = (raw.match(/\r\n/g) ?? []).length;
   const lfCount = (raw.match(/\n/g) ?? []).length;
   const lineEnding: "\r\n" | "\n" = crlfCount > 0 && crlfCount * 2 >= lfCount ? "\r\n" : "\n";
