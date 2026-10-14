@@ -90,6 +90,11 @@ describe("Discord webhook delivery", () => {
       text: "Example: `first\n@alice`\nPlease review @alice then `notify @alice",
       expected: "Example: `first\n@alice`\nPlease review <@123456789> then `notify @alice",
     },
+    {
+      label: "sentence punctuation after plain and dotted mention aliases",
+      text: "Thanks @alice. Please ask @alice.dev...",
+      expected: "Thanks <@123456789>. Please ask <@987654321>...",
+    },
   ])("preserves $label through bound-thread persona delivery", async ({ text, expected }) => {
     mockDiscordBoundThreadManager(hoisted);
     await withWebhookServer(accepted, async (contents) => {
@@ -98,7 +103,7 @@ describe("Discord webhook delivery", () => {
           channels: {
             discord: {
               token: "Bot test-token",
-              mentionAliases: { alice: "123456789" },
+              mentionAliases: { alice: "123456789", "alice.dev": "987654321" },
             },
           },
         },

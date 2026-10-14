@@ -65,21 +65,34 @@ function rewritePlainTextMentions(
 ): string {
   return text.replace(
     MENTION_CANDIDATE_PATTERN,
-    (match: string, prefix: string, handle: string) => {
-      const lookup = handle.toLowerCase();
-      if (DISCORD_RESERVED_MENTIONS.has(lookup)) {
-        return match;
+    (match: string, prefix: string, handle: string, offset: number) => {
+      let candidate = handle;
+      while (candidate.length >= 2) {
+        if (DISCORD_RESERVED_MENTIONS.has(candidate.toLowerCase())) {
+          return match;
+        }
+        const userId =
+          resolveConfiguredMentionAlias(candidate, params.mentionAliases) ??
+          resolveDiscordDirectoryUserId({
+            accountId: params.accountId,
+            handle: candidate,
+          });
+        if (userId) {
+          return `${prefix}${formatMention({ userId })}${handle.slice(candidate.length)}`;
+        }
+        if (!candidate.endsWith(".")) {
+          return match;
+        }
+        // Preserve exact handle matches, but do not introduce pings inside URLs.
+        if (
+          candidate === handle &&
+          /(?:\/\/|www\.)\S*$/i.test(text.slice(0, offset + prefix.length))
+        ) {
+          return match;
+        }
+        candidate = candidate.slice(0, -1);
       }
-      const userId =
-        resolveConfiguredMentionAlias(handle, params.mentionAliases) ??
-        resolveDiscordDirectoryUserId({
-          accountId: params.accountId,
-          handle,
-        });
-      if (!userId) {
-        return match;
-      }
-      return `${prefix}${formatMention({ userId })}`;
+      return match;
     },
   );
 }
