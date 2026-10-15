@@ -90,16 +90,30 @@ describe("rewriteDiscordKnownMentions", () => {
   });
 
   it.each([
-    "user@host.com mail@alice. \\@alice.",
-    "https://example.com/@alice. https://example.com/?@alice https://example.com/!@alice...",
-    "www.example.com/?@alice. //example.com/?@alice. [link](//example.com/?@alice.)",
-    "mailto:user@host.com?subject=@alice.",
-  ])("leaves emails, escaped mentions, and URLs unchanged: %s", (text) => {
+    ["user@host.com mail@alice. \\@alice.", "user@host.com mail@alice. \\@alice."],
+    [
+      "https://example.com/@alice. https://example.com/?@alice https://example.com/!@alice...",
+      "https://example.com/@alice. https://example.com/?@alice https://example.com/!@alice...",
+    ],
+    [
+      "www.example.com/?@alice. //example.com/?@alice. [link](//example.com/?@alice.)",
+      "www.example.com/?@alice. //example.com/?@alice. [link](//example.com/?@alice.)",
+    ],
+    ["mailto:user@host.com?subject=@alice.", "mailto:user@host.com?subject=@alice."],
+    ["See [docs](https://example.com),@alice", "See [docs](https://example.com),<@123456789>"],
+    ["(https://example.com/a_(b)) @alice.", "(https://example.com/a_(b)) <@123456789>."],
+    [
+      "See [docs](https://example.com/a_(@alice)),@alice.",
+      "See [docs](https://example.com/a_(@alice)),<@123456789>.",
+    ],
+    ["https://example.com/@alice", "https://example.com/@alice"],
+    ["user@alice.com", "user@alice.com"],
+  ])("resolves prose mentions while preserving URLs and emails: %s", (text, expected) => {
     expect(
       rewriteDiscordKnownMentions(`${text} @alice.`, {
-        mentionAliases: { alice: "123456789", "alice.": "987654321", "host.com": "111111111" },
+        mentionAliases: { alice: "123456789", "alice.com": "987654321", "host.com": "111111111" },
       }),
-    ).toBe(`${text} <@987654321>`);
+    ).toBe(`${expected} <@123456789>.`);
   });
 
   it.each([

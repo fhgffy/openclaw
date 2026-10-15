@@ -4,11 +4,11 @@ import {
   normalizeDiscordSnowflake,
   resolveDiscordDirectoryUserId,
 } from "./directory-cache.js";
+import { findDiscordUrlRanges } from "./url-ranges.js";
 
 type DiscordMentionAliasesConfig = Record<string, string>;
 
-const MENTION_CANDIDATE_PATTERN =
-  /(?:\/\/|www\.|mailto:)[^\s<>]+|(^|[\s([{"'.,;:!?])@([a-z0-9_.-]{2,32}(?:#[0-9]{4})?)/gi;
+const MENTION_CANDIDATE_PATTERN = /(^|[\s([{"'.,;:!?])@([a-z0-9_.-]{2,32}(?:#[0-9]{4})?)/gi;
 const DISCORD_RESERVED_MENTIONS = new Set(["everyone", "here"]);
 const DISCORD_DISCRIMINATOR_SUFFIX = /#\d{4}$/;
 const DISCORD_BROADCAST_MENTION_PATTERN = /@(everyone|here)\b/;
@@ -64,11 +64,12 @@ function rewritePlainTextMentions(
     mentionAliases?: DiscordMentionAliasesConfig | null;
   },
 ): string {
+  const urlRanges = findDiscordUrlRanges(text);
   return text.replace(
     MENTION_CANDIDATE_PATTERN,
-    (match: string, prefix: string | undefined, handle: string | undefined) => {
-      // URL tokens have no handle capture and must never produce a mention.
-      if (!handle) {
+    (match: string, prefix: string, handle: string, offset: number) => {
+      const mentionStart = offset + prefix.length;
+      if (urlRanges.some(({ start, end }) => start <= mentionStart && mentionStart < end)) {
         return match;
       }
       for (let candidate = handle; candidate.length >= 2; candidate = candidate.slice(0, -1)) {
