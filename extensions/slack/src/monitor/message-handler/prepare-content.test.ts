@@ -34,15 +34,21 @@ describe("Slack rich-text date content", () => {
     });
   });
 
-  it("keeps dates in order with surrounding message text", async () => {
-    const result = await resolveRichTextContent([
-      { type: "text", text: "Meet on " },
-      { type: "date", timestamp: 1_700_000_000, format: "{date_short}" },
-      { type: "text", text: " after lunch." },
-    ]);
+  it.each([
+    { fallback: undefined, expected: "Meet on 2023-11-14T22:13:20.000Z after lunch." },
+    { fallback: "Nov 14", expected: "Meet on Nov 14 after lunch." },
+  ])(
+    "keeps dates and surrounding spaces with fallback $fallback",
+    async ({ fallback, expected }) => {
+      const result = await resolveRichTextContent([
+        { type: "text", text: "Meet on " },
+        { type: "date", timestamp: 1_700_000_000, format: "{date_short}", fallback },
+        { type: "text", text: " after lunch." },
+      ]);
 
-    expect(result?.rawBody).toBe("Meet on 2023-11-14T22:13:20.000Z after lunch.");
-  });
+      expect(result?.rawBody).toBe(expected);
+    },
+  );
 
   it.each([0, Number.NaN])("prefers the supplied fallback for timestamp %s", async (timestamp) => {
     const result = await resolveRichTextContent([
