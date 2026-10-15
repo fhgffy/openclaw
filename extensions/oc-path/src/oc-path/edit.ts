@@ -35,6 +35,7 @@ export function setMdOcPath(ast: MdAst, path: OcPath, newValue: string): MdEditR
     }
     const [start, end] = value.range;
     const ending = source.slice(0, end).match(/\r?\n$/)?.[0] ?? "";
+    const separator = start === end && /\S/.test(source.charAt(start - 1)) ? " " : "";
     const idx = ast.frontmatter.indexOf(existing);
     return {
       ok: true,
@@ -42,7 +43,7 @@ export function setMdOcPath(ast: MdAst, path: OcPath, newValue: string): MdEditR
         ast,
         offset + start,
         offset + end,
-        (source[start - 1] === ":" ? " " : "") + formatFrontmatterValue(newValue) + ending,
+        separator + formatFrontmatterValue(newValue) + ending,
         (shifted) => ({
           ...shifted,
           frontmatter: shifted.frontmatter.map((entry, index) =>
