@@ -529,7 +529,7 @@ describe("openclaw path CLI", () => {
           "plain",
           before.replace(
             "metadata:\n  openclaw:\n    requires:\n      bins: [gh]",
-            "metadata:\n  plain",
+            "metadata: plain",
           ),
         ],
       ])(
@@ -551,6 +551,16 @@ describe("openclaw path CLI", () => {
           expect(readFileSync(filePath, "utf8")).toBe(
             expected.replace(/\n/g, ending) + finalNewline,
           );
+          if (target === "[frontmatter]/metadata") {
+            const readback = createTestRuntime();
+            await pathResolveCommand(
+              `oc://SKILL.md/${target}`,
+              { cwd: workspaceDir, json: true },
+              readback,
+            );
+            expect(readback.exitCode, stderrText(readback)).toBe(0);
+            expect(JSON.parse(stdoutText(readback)).match.valueText).toBe(value);
+          }
         },
       );
     });

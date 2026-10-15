@@ -1,5 +1,5 @@
 import { escapeRegExp } from "openclaw/plugin-sdk/text-utility-runtime";
-import { isNode, parseDocument } from "yaml";
+import { isAlias, isNode, parseDocument } from "yaml";
 import type { MdAst } from "./ast.js";
 import { replaceMdSource } from "./emit.js";
 import { formatFrontmatterValue } from "./frontmatter-format.js";
@@ -25,25 +25,26 @@ export function setMdOcPath(ast: MdAst, path: OcPath, newValue: string): MdEditR
     }
     const offset = sourceLineOffset(ast.raw, existing.line);
     const source = ast.raw.slice(offset, sourceLineOffset(ast.raw, ast.frontmatterEndLine));
+    const prefix = /^[^:\r\n]*:[ \t]*/.exec(source)?.[0];
     // YAML owns the selected value's extent, including block scalars and maps.
     const value = parseDocument(source, { prettyErrors: false, logLevel: "silent" }).get(
       existing.key,
       true,
     );
-    if (!isNode(value) || !value.range) {
+    if (prefix === undefined || !isNode(value) || !value.range) {
       return { ok: false, reason: "unresolved" };
     }
-    const [start, end] = value.range;
+    const end = value.range[1];
     const ending = source.slice(0, end).match(/\r?\n$/)?.[0] ?? "";
-    const separator = start === end && /\S/.test(source.charAt(start - 1)) ? " " : "";
+    const anchor = !isAlias(value) && value.anchor ? `&${value.anchor} ` : "";
     const idx = ast.frontmatter.indexOf(existing);
     return {
       ok: true,
       ast: replaceMdSource(
         ast,
-        offset + start,
+        offset + prefix.length,
         offset + end,
-        separator + formatFrontmatterValue(newValue) + ending,
+        (prefix.endsWith(":") ? " " : "") + anchor + formatFrontmatterValue(newValue) + ending,
         (shifted) => ({
           ...shifted,
           frontmatter: shifted.frontmatter.map((entry, index) =>
