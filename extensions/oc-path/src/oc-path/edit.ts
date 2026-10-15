@@ -25,25 +25,24 @@ export function setMdOcPath(ast: MdAst, path: OcPath, newValue: string): MdEditR
     }
     const offset = sourceLineOffset(ast.raw, existing.line);
     const source = ast.raw.slice(offset, sourceLineOffset(ast.raw, ast.frontmatterEndLine));
-    const prefix = /^[^:\r\n]*:[ \t]*/.exec(source)?.[0];
     // YAML owns the selected value's extent, including block scalars and maps.
     const value = parseDocument(source, { prettyErrors: false, logLevel: "silent" }).get(
       existing.key,
       true,
     );
-    if (prefix === undefined || !isNode(value) || !value.range) {
+    if (!isNode(value) || !value.range) {
       return { ok: false, reason: "unresolved" };
     }
-    const end = value.range[1];
+    const [start, end] = value.range;
     const ending = source.slice(0, end).match(/\r?\n$/)?.[0] ?? "";
     const idx = ast.frontmatter.indexOf(existing);
     return {
       ok: true,
       ast: replaceMdSource(
         ast,
-        offset + prefix.length,
+        offset + start,
         offset + end,
-        (prefix.endsWith(":") ? " " : "") + formatFrontmatterValue(newValue) + ending,
+        (source[start - 1] === ":" ? " " : "") + formatFrontmatterValue(newValue) + ending,
         (shifted) => ({
           ...shifted,
           frontmatter: shifted.frontmatter.map((entry, index) =>

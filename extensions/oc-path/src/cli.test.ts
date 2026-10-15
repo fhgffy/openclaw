@@ -482,7 +482,7 @@ describe("openclaw path CLI", () => {
   describe("set", () => {
     describe.each(["\n", "\r\n"])("Markdown source preservation with %j", (ending) => {
       const frontmatter =
-        '\uFEFF---\n# Keep the authored metadata.\nname: "example"\n\ndescription: |\n  First line.\n  Second line.\nmetadata:\n  openclaw:\n    requires:\n      bins: [gh]\n---\n';
+        '\uFEFF---\n# Keep the authored metadata.\nname: &shared "example"\ncopy: *shared\n\ndescription: |\n  First line.\n  Second line.\nmetadata:\n  openclaw:\n    requires:\n      bins: [gh]\n---\n';
       const body = '\n# Title\n\n## Tools ##\n- command: old\n\n## Other\n* untouched: "quoted"';
       const before = frontmatter + body;
       it.each([
@@ -503,7 +503,7 @@ describe("openclaw path CLI", () => {
           "frontmatter edit",
           "[frontmatter]/name",
           "updated",
-          before.replace('name: "example"', "name: updated"),
+          before.replace('name: &shared "example"', "name: &shared updated"),
         ],
         [
           "frontmatter insertion",
@@ -523,7 +523,7 @@ describe("openclaw path CLI", () => {
           "plain",
           before.replace(
             "metadata:\n  openclaw:\n    requires:\n      bins: [gh]",
-            "metadata: plain",
+            "metadata:\n  plain",
           ),
         ],
       ])(
