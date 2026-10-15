@@ -42,7 +42,7 @@ export function parseMd(raw: string): ParseResult {
       kind: "md",
       raw,
       frontmatter: fm?.entries ?? [],
-      ...(fm === null ? {} : { frontmatterRaw: raw.split("\n", fm.endLine + 1).join("\n") }),
+      ...(fm === null ? {} : { frontmatterEndLine: fm.endLine + 1 }),
       preamble,
       blocks,
     },
