@@ -18,13 +18,8 @@ interface JsonlParseResult {
 
 export function parseJsonl(raw: string): JsonlParseResult {
   const diagnostics: Diagnostic[] = [];
-  // Detect the line-ending convention from the input. Windows-authored
-  // datasets use CRLF; Unix and most cross-platform tooling use LF. We
-  // count CRLF occurrences and call CRLF if the majority of newlines
-  // are CRLF — this handles mixed-ending files (e.g., a Unix log
-  // edited once on Windows) by picking the dominant convention.
-  // Render mode and appending to an unterminated file use this convention;
-  // targeted edits preserve each existing separator verbatim.
+  // Use the dominant newline (CRLF wins ties) for rendering and unterminated
+  // appends. Targeted edits preserve existing separators verbatim.
   const crlfCount = (raw.match(/\r\n/g) ?? []).length;
   const lfCount = (raw.match(/\n/g) ?? []).length;
   const lineEnding: "\r\n" | "\n" = crlfCount > 0 && crlfCount * 2 >= lfCount ? "\r\n" : "\n";

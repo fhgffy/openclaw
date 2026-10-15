@@ -153,19 +153,18 @@ describe("JSONL source edits", () => {
     );
   });
 
-  it.each(["", "\n", "\r\n", '{ "id":9007199254740993 }'])(
-    "preserves prior bytes when appending after %j",
-    (raw) => {
-      const expectedPrefix = raw && !raw.endsWith("\n") ? `${raw}\n` : raw;
-      const suffix = raw.endsWith("\r\n") ? "\r\n" : raw.endsWith("\n") ? "\n" : "";
-      const next = appendJsonlOcPath(parseJsonl(raw).ast, { kind: "number", value: 42 });
-      expect(next.raw).toBe(`${expectedPrefix}42${suffix}`);
-      expect(resolveJsonlOcPath(next, parseOcPath("oc://x.jsonl/$last"))).toMatchObject({
-        kind: "line",
-        node: { value: { kind: "number", value: 42 } },
-      });
-    },
-  );
+  it.each([
+    ["\n", "\n42\n"],
+    ["\r\n", "\r\n42\r\n"],
+    ['{ "id":9007199254740993 }', '{ "id":9007199254740993 }\n42'],
+  ])("preserves prior bytes when appending after %j", (raw, expected) => {
+    const next = appendJsonlOcPath(parseJsonl(raw).ast, { kind: "number", value: 42 });
+    expect(next.raw).toBe(expected);
+    expect(resolveJsonlOcPath(next, parseOcPath("oc://x.jsonl/$last"))).toMatchObject({
+      kind: "line",
+      node: { value: { kind: "number", value: 42 } },
+    });
+  });
 
   it("rejects new sentinel values without changing the source", () => {
     const original = '{"event":"old"}\n';

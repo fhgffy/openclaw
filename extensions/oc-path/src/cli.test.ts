@@ -378,7 +378,10 @@ describe("openclaw path CLI", () => {
         const before =
           '\uFEFF{ "id": 9007199254740993, "ratio": 1.0000000000000001 } // note' +
           firstEnding +
-          '{ "items": [{"event":"old", "id":9007199254740993}], "literal":"\\u0041" }' +
+          '{ "items": [{"event":"old", "id":9007199254740993, "ratio":1.0000000000000001}], "literal":"\\u0041" }' +
+          lastEnding +
+          lastEnding +
+          "// keep this comment" +
           lastEnding +
           "broken record" +
           lastEnding;
