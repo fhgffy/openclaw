@@ -22,8 +22,7 @@ async function createPlatformSkills() {
   const fixtures: Array<[string, OpenClawSkillMetadata]> = [
     ["alias", { os: ["macos"], requires: { bins: ["mac-tool"] } }],
     ["canonical", { os: ["darwin"], requires: { anyBins: ["mac-alternative"] } }],
-    ["normalized", { os: [" MacOS "] }],
-    ["always", { os: ["macos"], always: true, requires: { bins: ["missing-tool"] } }],
+    ["always", { os: [" MacOS "], always: true, requires: { bins: ["missing-tool"] } }],
     ["unsupported", { os: ["unsupported-platform"], always: true }],
   ];
   for (const [name, metadata] of fixtures) {
@@ -89,7 +88,7 @@ describe("skill OS compatibility", () => {
           managedSkillsDir: path.join(workspaceDir, ".managed"),
           bundledSkillsDir: path.join(workspaceDir, ".bundled"),
         });
-        const expected = compatible ? ["alias", "always", "canonical", "normalized"] : [];
+        const expected = compatible ? ["alias", "always", "canonical"] : [];
         expect(
           report.skills.filter((skill) => skill.modelVisible).map((skill) => skill.name),
         ).toEqual(expected);

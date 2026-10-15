@@ -35,7 +35,6 @@ function normalizeOsRequirementPlatform(platform: string): string {
   return normalized === "macos" ? "darwin" : normalized;
 }
 
-/** Matches OS requirements consistently without changing their user-facing labels. */
 export function isOsRequirementSatisfied(
   required: readonly string[],
   platforms: readonly string[],

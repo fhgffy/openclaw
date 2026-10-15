@@ -121,8 +121,7 @@ function normalizeInstallOptions(
   platform: string,
 ): SkillInstallOption[] {
   // Recipes execute where the workspace dependencies live.
-  const requiredOs = entry.metadata?.os ?? [];
-  if (!isOsRequirementSatisfied(requiredOs, [platform])) {
+  if (!isOsRequirementSatisfied(entry.metadata?.os ?? [], [platform])) {
     return [];
   }
 
