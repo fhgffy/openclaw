@@ -7,7 +7,8 @@ import {
 
 type DiscordMentionAliasesConfig = Record<string, string>;
 
-const MENTION_CANDIDATE_PATTERN = /(^|[\s([{"'.,;:!?])@([a-z0-9_.-]{2,32}(?:#[0-9]{4})?)/gi;
+const MENTION_CANDIDATE_PATTERN =
+  /(?:\/\/|www\.|mailto:)[^\s<>]+|(^|[\s([{"'.,;:!?])@([a-z0-9_.-]{2,32}(?:#[0-9]{4})?)/gi;
 const DISCORD_RESERVED_MENTIONS = new Set(["everyone", "here"]);
 const DISCORD_DISCRIMINATOR_SUFFIX = /#\d{4}$/;
 const DISCORD_BROADCAST_MENTION_PATTERN = /@(everyone|here)\b/;
@@ -65,9 +66,12 @@ function rewritePlainTextMentions(
 ): string {
   return text.replace(
     MENTION_CANDIDATE_PATTERN,
-    (match: string, prefix: string, handle: string, offset: number) => {
-      let candidate = handle;
-      while (candidate.length >= 2) {
+    (match: string, prefix: string | undefined, handle: string | undefined) => {
+      // URL tokens have no handle capture and must never produce a mention.
+      if (!handle) {
+        return match;
+      }
+      for (let candidate = handle; candidate.length >= 2; candidate = candidate.slice(0, -1)) {
         if (DISCORD_RESERVED_MENTIONS.has(candidate.toLowerCase())) {
           return match;
         }
@@ -83,14 +87,6 @@ function rewritePlainTextMentions(
         if (!candidate.endsWith(".")) {
           return match;
         }
-        // Preserve exact handle matches, but do not introduce pings inside URLs.
-        if (
-          candidate === handle &&
-          /(?:\/\/|www\.)\S*$/i.test(text.slice(0, offset + prefix.length))
-        ) {
-          return match;
-        }
-        candidate = candidate.slice(0, -1);
       }
       return match;
     },

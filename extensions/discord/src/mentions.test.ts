@@ -1,4 +1,3 @@
-// Discord tests cover mentions plugin behavior.
 import { beforeEach, describe, expect, it } from "vitest";
 import { rememberDiscordDirectoryUser } from "./directory-cache.js";
 import { clearDiscordDirectoryCacheForTest } from "./directory-cache.test-support.js";
@@ -29,10 +28,10 @@ describe("rewriteDiscordKnownMentions", () => {
       userId: "123456789",
       handles: ["Alice", "@alice_user", "alice#1234"],
     });
-    const rewritten = rewriteDiscordKnownMentions("ping @Alice. and @alice_user...", {
+    const rewritten = rewriteDiscordKnownMentions("ping @Alice and @alice_user", {
       accountId: "default",
     });
-    expect(rewritten).toBe("ping <@123456789>. and <@123456789>...");
+    expect(rewritten).toBe("ping <@123456789> and <@123456789>");
   });
 
   it("rewrites configured mention aliases before the cache", () => {
@@ -41,23 +40,26 @@ describe("rewriteDiscordKnownMentions", () => {
       userId: "111111111",
       handles: ["vladislava"],
     });
-    const rewritten = rewriteDiscordKnownMentions("ping @Vladislava. and @BuildBot#1234.", {
+    const rewritten = rewriteDiscordKnownMentions("ping @Vladislava and @BuildBot#1234", {
       accountId: "default",
       mentionAliases: {
         BuildBot: "222222222",
         Vladislava: "333333333",
       },
     });
-    expect(rewritten).toBe("ping <@333333333>. and <@222222222>.");
+    expect(rewritten).toBe("ping <@333333333> and <@222222222>");
   });
 
-  it("preserves internal dots and punctuation around configured mentions", () => {
-    expect(
-      rewriteDiscordKnownMentions("Thanks @alice. Ask (@alice.dev...), then @alice!", {
-        mentionAliases: { alice: "111111111", "alice.dev": "222222222" },
-      }),
-    ).toBe("Thanks <@111111111>. Ask (<@222222222>...), then <@111111111>!");
-  });
+  it.each([".", "...", ",", "!", "?", ":", ";", ")"])(
+    "preserves %s after known mentions",
+    (suffix) => {
+      expect(
+        rewriteDiscordKnownMentions(`@alice${suffix} @alice.dev${suffix} @alice#1234${suffix}`, {
+          mentionAliases: { alice: "111111111", "alice.dev": "222222222" },
+        }),
+      ).toBe(`<@111111111>${suffix} <@222222222>${suffix} <@111111111>${suffix}`);
+    },
+  );
 
   it("prefers the longest known handle before treating trailing dots as punctuation", () => {
     rememberDiscordDirectoryUser({
@@ -87,20 +89,17 @@ describe("rewriteDiscordKnownMentions", () => {
     expect(rewritten).toBe(text);
   });
 
-  it("leaves email addresses, escaped mentions, and URL paths unchanged", () => {
-    const text = "alice@example.com mail@alice. \\@alice. https://example.com/@alice.";
-    expect(rewriteDiscordKnownMentions(text, { mentionAliases: { alice: "123456789" } })).toBe(
-      text,
-    );
-  });
-
-  it("does not introduce mention rewrites inside URL punctuation", () => {
-    const text =
-      "https://example.com/?@alice. https://example.com/!@alice... www.example.com/?@alice. " +
-      "//example.com/?@alice. [link](//example.com/?@alice.)";
-    expect(rewriteDiscordKnownMentions(text, { mentionAliases: { alice: "123456789" } })).toBe(
-      text,
-    );
+  it.each([
+    "user@host.com mail@alice. \\@alice.",
+    "https://example.com/@alice. https://example.com/?@alice https://example.com/!@alice...",
+    "www.example.com/?@alice. //example.com/?@alice. [link](//example.com/?@alice.)",
+    "mailto:user@host.com?subject=@alice.",
+  ])("leaves emails, escaped mentions, and URLs unchanged: %s", (text) => {
+    expect(
+      rewriteDiscordKnownMentions(`${text} @alice.`, {
+        mentionAliases: { alice: "123456789", "alice.": "987654321", "host.com": "111111111" },
+      }),
+    ).toBe(`${text} <@987654321>`);
   });
 
   it.each([
