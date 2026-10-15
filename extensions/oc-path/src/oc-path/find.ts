@@ -263,11 +263,7 @@ const jsoncOps: WalkOps<JsoncValue> = {
     if (concrete === null) {
       return null;
     }
-    const match = jsoncOps.lookup(node, concrete);
-    if (match === null || node.kind !== "object") {
-      return match;
-    }
-    return { keySub: quoteSeg(concrete), child: match.child };
+    return jsoncOps.lookup(node, node.kind === "object" ? quoteSeg(concrete) : concrete);
   },
   *predicate(node, pred) {
     yield* jsoncOps.enumerate(node, (child) =>
@@ -394,10 +390,7 @@ const yamlOps: WalkOps<Node> = {
     if (concrete === null) {
       return null;
     }
-    const match = yamlOps.lookup(node, concrete);
-    return match !== null && isMap(node)
-      ? { keySub: quoteSeg(concrete), child: match.child }
-      : match;
+    return yamlOps.lookup(node, isMap(node) ? quoteSeg(concrete) : concrete);
   },
   *predicate(node, pred) {
     yield* yamlOps.enumerate(node, (child) =>

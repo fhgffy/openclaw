@@ -22,11 +22,24 @@ describe("oc-path-parse-edges", () => {
       "oc://config.jsonc/items/$last",
       'oc://config.jsonc/items/"$first"',
       'oc://config.jsonc/items/"$last"',
+      "oc://config.jsonc/items/*",
+      "oc://config.jsonc/items/**",
+      "oc://config.jsonc/items/+key",
+      "oc://config.jsonc/items/#0",
+      String.raw`oc://config.jsonc/items/"a\"b\\c/d.e?f"`,
+      String.raw`oc://"dir/a\"b\\c.jsonc"/"$first"`,
     ];
     for (const c of cases) {
       expect(formatOcPath(parseOcPath(c)), `round-trip failed for ${c}`).toBe(c);
     }
   });
+
+  it.each([String.raw`"bad\q"`, String.raw`"bad\n"`, '"bad"quote"'])(
+    "rejects invalid quoted escapes: %s",
+    (segment) => {
+      expect(() => parseOcPath(`oc://config.jsonc/${segment}`)).toThrow(OcPathError);
+    },
+  );
 
   it("file slot with `/` round-trips via quoting", () => {
     const constructed = formatOcPath({
