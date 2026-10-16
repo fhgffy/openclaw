@@ -86,6 +86,22 @@ describe("fetchZaiUsage", () => {
     expect(result.windows).toEqual([{ label: "Tokens (1w)", usedPercent: 20, resetAt: undefined }]);
   });
 
+  it.each([8_640_000_000_000_001, "1778753640304", true, { timestamp: 1_778_753_640_304 }])(
+    "keeps quota visible without a reset for unsupported timestamps: %j",
+    async (nextResetTime) => {
+      const result = await fetchUsage({
+        success: true,
+        code: 200,
+        data: {
+          limits: [{ type: "TOKENS_LIMIT", unit: 6, number: 1, percentage: 20, nextResetTime }],
+        },
+      });
+      expect(result.windows).toEqual([
+        { label: "Tokens (1w)", usedPercent: 20, resetAt: undefined },
+      ]);
+    },
+  );
+
   it("normalizes valid limits without letting malformed siblings discard them", async () => {
     const reset = "2026-01-08T00:00:00Z";
     const result = await fetchUsage({
@@ -99,13 +115,6 @@ describe("fetchZaiUsage", () => {
           { type: "OTHER_LIMIT", percentage: 50 },
           { type: "TOKENS_LIMIT", percentage: 32, unit: 3, number: 6, nextResetTime: reset },
           { type: "TOKENS_LIMIT", percentage: 8, unit: 5, number: 15, nextResetTime: "not-a-date" },
-          {
-            type: "TOKENS_LIMIT",
-            percentage: 12,
-            unit: 3,
-            number: 5,
-            nextResetTime: 8_640_000_000_000_001,
-          },
           { type: "TIME_LIMIT", percentage: 140, unit: 1, number: 30 },
           { type: "TOKENS_LIMIT", percentage: -5, unit: 99 },
           { type: "TOKENS_LIMIT", percentage: 10, unit: 3 },
@@ -117,7 +126,6 @@ describe("fetchZaiUsage", () => {
     expect(result.windows).toEqual([
       { label: "Tokens (6h)", usedPercent: 32, resetAt: Date.parse(reset) },
       { label: "Tokens (15mo)", usedPercent: 8, resetAt: undefined },
-      { label: "Tokens (5h)", usedPercent: 12, resetAt: undefined },
       { label: "Monthly", usedPercent: 100, resetAt: undefined },
       { label: "Tokens (Limit)", usedPercent: 0, resetAt: undefined },
       { label: "Tokens (Limit)", usedPercent: 10, resetAt: undefined },

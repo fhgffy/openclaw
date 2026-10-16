@@ -45,20 +45,17 @@ export async function fetchZaiUsage(
       continue;
     }
     const type = normalizeOptionalString(limit.type);
-    const percent = clampPercent(asFiniteNumber(limit.percentage) ?? 0);
-    const unit = asFiniteNumber(limit.unit);
     const number = asFiniteNumber(limit.number);
-    const nextReset =
-      asDateTimestampMs(limit.nextResetTime) ??
-      parseUsageResetAt(normalizeOptionalString(limit.nextResetTime));
-    const suffix = WINDOW_UNITS[unit ?? 0];
+    const suffix = WINDOW_UNITS[asFiniteNumber(limit.unit) ?? 0];
     const windowLabel = suffix && number !== undefined ? `${number}${suffix}` : "Limit";
 
     if (type === "TOKENS_LIMIT" || type === "TIME_LIMIT") {
       windows.push({
         label: type === "TOKENS_LIMIT" ? `Tokens (${windowLabel})` : "Monthly",
-        usedPercent: percent,
-        resetAt: nextReset,
+        usedPercent: clampPercent(asFiniteNumber(limit.percentage) ?? 0),
+        resetAt:
+          asDateTimestampMs(limit.nextResetTime) ??
+          parseUsageResetAt(normalizeOptionalString(limit.nextResetTime)),
       });
     }
   }
