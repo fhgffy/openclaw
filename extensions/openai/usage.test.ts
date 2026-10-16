@@ -200,19 +200,17 @@ describe("OpenAI provider usage", () => {
     const result = await fetchAdminUsage({
       apiKey: "sk-admin-test",
       fetchFn: async (input) =>
-        new Response(
-          JSON.stringify({
-            data: requestUrl(input).pathname.endsWith("/organization/costs")
-              ? []
-              : [
-                  {
-                    start_time: 1_783_296_000,
-                    results: [{ ...usage, num_model_requests: 5, model: "test-model" }],
-                  },
-                ],
-            has_more: false,
-          }),
-        ),
+        Response.json({
+          data: requestUrl(input).pathname.endsWith("/organization/costs")
+            ? []
+            : [
+                {
+                  start_time: 1_783_296_000,
+                  results: [{ ...usage, num_model_requests: 5, model: "test-model" }],
+                },
+              ],
+          has_more: false,
+        }),
     });
 
     expect(result.costHistory?.daily).toEqual([

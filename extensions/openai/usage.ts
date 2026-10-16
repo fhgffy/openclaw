@@ -145,7 +145,7 @@ function aggregateHistory(params: {
     periodDays: params.periodDays,
     unit: "USD",
     ...(params.projectId ? { scope: `Project ${params.projectId}` } : {}),
-    daily: [...daily.entries()].toSorted(([a], [b]) => a - b).map(([, entry]) => entry),
+    daily: daily.values(),
     formatSummary: ({ requests, totalTokens }) =>
       `${requests.toLocaleString("en-US")} requests · ${totalTokens.toLocaleString("en-US")} tokens`,
   });
