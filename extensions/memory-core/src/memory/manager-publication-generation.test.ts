@@ -101,18 +101,33 @@ function indexCommands(calls: unknown[][]): string[] {
   });
 }
 
-function recordIndexCommands(prototype: Pick<MessagePort, "postMessage">) {
+function recordIndexCommands(target: "messagePort" | "worker") {
   const commands: string[] = [];
+  const record = (message: unknown, send: () => void) => {
+    const dispatched = indexCommands([[message]]);
+    send();
+    commands.push(...dispatched);
+  };
+  if (target === "messagePort") {
+    const prototype: Pick<MessagePort, "postMessage"> = MessagePort.prototype;
+    const nativePost = prototype.postMessage;
+    const posts = vi.spyOn(prototype, "postMessage").mockImplementation(function (
+      this: MessagePort,
+      message: unknown,
+      options,
+    ) {
+      record(message, () => nativePost.call(this, message, options));
+    });
+    return { commands, restore: () => posts.mockRestore() };
+  }
+  const prototype: Pick<Worker, "postMessage"> = Worker.prototype;
   const nativePost = prototype.postMessage;
   const posts = vi.spyOn(prototype, "postMessage").mockImplementation(function (
-    this: MessagePort | Worker,
+    this: Worker,
     message: unknown,
     transferList,
   ) {
-    // Decode before the native transfer detaches the sender's command buffer.
-    const dispatched = indexCommands([[message]]);
-    nativePost.call(this, message, transferList);
-    commands.push(...dispatched);
+    record(message, () => nativePost.call(this, message, transferList));
   });
   return { commands, restore: () => posts.mockRestore() };
 }
@@ -175,7 +190,7 @@ it("retains published memory facts across session and embedding-cache writes", a
   await withPublishedIndex(async (database) => {
     await database.writeMetadata(metadata);
     const facts = database.facts;
-    const messages = recordIndexCommands(MessagePort.prototype);
+    const messages = recordIndexCommands("messagePort");
     try {
       await upsertSessionEntry({
         agentId: "main",
@@ -349,7 +364,7 @@ it("refreshes facts once after another in-process writer commits", async () => {
       db.prepare("UPDATE memory_index_state SET revision = revision + 1 WHERE id = 1").run();
     });
     const sql = observeHostDataSql();
-    const messages = recordIndexCommands(Worker.prototype);
+    const messages = recordIndexCommands("worker");
     try {
       for (let turn = 0; turn < 3; turn++) {
         await database.refreshFacts();
