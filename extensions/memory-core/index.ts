@@ -2,11 +2,16 @@ import { listAgentIds, resolveSessionAgentIdStrict } from "openclaw/plugin-sdk/a
 import { createLazyRuntimeModule } from "openclaw/plugin-sdk/lazy-runtime";
 // Memory Core plugin entrypoint registers its OpenClaw integration.
 import {
+  asToolParamsRecord,
   jsonResult,
   type MemoryPluginRuntime,
   type OpenClawConfig,
 } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { resolveMemoryBackendConfig } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
+import {
+  readNonNegativeIntegerParam,
+  readPositiveIntegerParam,
+} from "openclaw/plugin-sdk/param-readers";
 import { normalizePluginsConfig } from "openclaw/plugin-sdk/plugin-config-runtime";
 import {
   definePluginEntry,
@@ -26,7 +31,7 @@ import {
   type MemoryToolOptions,
 } from "./src/memory-tool-contract.js";
 import type { MemoryCoreAcquireLocalService } from "./src/memory/embedding-local-service.js";
-import { prepareMemoryManagerReload } from "./src/memory/lifecycle.js";
+import { hasMemoryIndexingBeenLive, prepareMemoryManagerReload } from "./src/memory/lifecycle.js";
 import type { MemoryCoreRuntimeHost } from "./src/memory/runtime-host.js";
 import { registerSessionBackfillGatewayMethods } from "./src/session-backfill-gateway.js";
 
@@ -128,6 +133,14 @@ function createLazyStandingIntentTool(
       },
       required: ["action"],
       additionalProperties: false,
+    },
+    prepareArguments: (args) => {
+      const params = asToolParamsRecord(args);
+      return {
+        ...params,
+        maxFires: readPositiveIntegerParam(params, "maxFires"),
+        cooldownSeconds: readNonNegativeIntegerParam(params, "cooldownSeconds"),
+      };
     },
     execute: async (toolCallId, params, signal, onUpdate) => {
       executorPromise ??= loadStandingIntentToolModule().then((module) =>
@@ -251,6 +264,12 @@ export default definePluginEntry({
         id: "memory-core-index",
         reload: { configPrefixes: ["memory.search", "agents", "models.providers"] },
         start({ config, logger }) {
+          // Cold start stays demand-driven: opening every agent's index starts its
+          // transcript and index workers before any search or turn needs them.
+          // Restarts after a manager ran restore watching without a search.
+          if (!hasMemoryIndexingBeenLive()) {
+            return;
+          }
           const activate = async () => {
             await Promise.all(
               listAgentIds(config).map(async (agentId) => {
