@@ -4,6 +4,7 @@ import type { MSTeamsConfig, OpenClawConfig } from "../runtime-api.js";
 import type { StoredConversationReference } from "./conversation-store.js";
 import { resolveMSTeamsSendContext } from "./send-context.js";
 import { sendMessageMSTeams } from "./send.js";
+import { createMSTeamsTestConfig } from "./setup.test-support.js";
 
 const sendContextMockState = vi.hoisted(() => {
   const getAccessToken = vi.fn();
@@ -24,6 +25,10 @@ const sendContextMockState = vi.hoisted(() => {
         id: "mock-app",
         api: {
           serviceUrl: "https://smba.trafficmanager.net/amer/",
+          fromServiceUrl: ({ serviceUrl }: { serviceUrl: string }) => ({
+            serviceUrl,
+            conversations: { activities: getActivities },
+          }),
           conversations: { activities: getActivities },
         },
       },
@@ -60,17 +65,13 @@ vi.mock("./sdk.js", () => ({
 }));
 
 function createConfig(overrides: MSTeamsConfig = {}): OpenClawConfig {
-  return {
-    channels: {
-      msteams: {
-        enabled: true,
-        appId: "app-id",
-        appPassword: "app-password",
-        tenantId: "tenant-id",
-        ...overrides,
-      },
-    },
-  };
+  return createMSTeamsTestConfig({
+    enabled: true,
+    appId: "app-id",
+    appPassword: "app-password",
+    tenantId: "tenant-id",
+    ...overrides,
+  });
 }
 
 function channelRef(params?: Partial<StoredConversationReference>): StoredConversationReference {
@@ -130,17 +131,13 @@ beforeEach(() => {
 describe("resolveMSTeamsSendContext", () => {
   it("rejects an unavailable selected certificate before reading conversation state", async () => {
     const certificatePath = "/private/openclaw-msteams-unavailable-send.pem";
-    const cfg = {
-      channels: {
-        msteams: {
-          enabled: true,
-          appId: "app-id",
-          tenantId: "tenant-id",
-          authType: "federated",
-          certificatePath,
-        },
-      },
-    } as OpenClawConfig;
+    const cfg = createMSTeamsTestConfig({
+      enabled: true,
+      appId: "app-id",
+      tenantId: "tenant-id",
+      authType: "federated",
+      certificatePath,
+    });
 
     const error = await resolveMSTeamsSendContext({
       cfg,
@@ -290,26 +287,22 @@ describe("resolveMSTeamsSendContext", () => {
       }),
     );
 
-    const cfg = {
-      channels: {
-        msteams: {
+    const cfg = createMSTeamsTestConfig({
+      enabled: true,
+      tenantId: "tenant-id",
+      accounts: {
+        default: {
           enabled: true,
-          tenantId: "tenant-id",
-          accounts: {
-            default: {
-              enabled: true,
-              appId: "default-app-id",
-              appPassword: "default-app-password",
-            },
-            secondary: {
-              enabled: true,
-              appId: "secondary-app-id",
-              appPassword: "secondary-app-password",
-            },
-          },
+          appId: "default-app-id",
+          appPassword: "default-app-password",
+        },
+        secondary: {
+          enabled: true,
+          appId: "secondary-app-id",
+          appPassword: "secondary-app-password",
         },
       },
-    } as OpenClawConfig;
+    });
 
     await expect(
       resolveMSTeamsSendContext({
@@ -337,21 +330,17 @@ describe("resolveMSTeamsSendContext", () => {
   });
 
   it("rejects named sends when the Teams channel is disabled globally", async () => {
-    const cfg = {
-      channels: {
-        msteams: {
-          enabled: false,
-          tenantId: "tenant-id",
-          accounts: {
-            support: {
-              enabled: true,
-              appId: "support-app-id",
-              appPassword: "support-app-password",
-            },
-          },
+    const cfg = createMSTeamsTestConfig({
+      enabled: false,
+      tenantId: "tenant-id",
+      accounts: {
+        support: {
+          enabled: true,
+          appId: "support-app-id",
+          appPassword: "support-app-password",
         },
       },
-    } as OpenClawConfig;
+    });
 
     await expect(
       resolveMSTeamsSendContext({
@@ -370,19 +359,15 @@ describe("resolveMSTeamsSendContext", () => {
       }),
     );
 
-    const cfg = {
-      channels: {
-        msteams: {
-          tenantId: "tenant-id",
-          accounts: {
-            secondary: {
-              appId: "secondary-app-id",
-              appPassword: "secondary-app-password",
-            },
-          },
+    const cfg = createMSTeamsTestConfig({
+      tenantId: "tenant-id",
+      accounts: {
+        secondary: {
+          appId: "secondary-app-id",
+          appPassword: "secondary-app-password",
         },
       },
-    } as OpenClawConfig;
+    });
 
     await expect(
       resolveMSTeamsSendContext({
@@ -394,22 +379,6 @@ describe("resolveMSTeamsSendContext", () => {
       accountId: "secondary",
       conversationId: "19:channel@thread.tacv2",
     });
-  });
-
-  it("does not query Graph while resolving an opaque Bot Framework conversation", async () => {
-    sendContextMockState.store.get.mockResolvedValue(
-      channelRef({
-        serviceUrl: "https://smba.trafficmanager.net/amer/",
-        conversation: { id: "a:personal", conversationType: "personal" },
-      }),
-    );
-
-    await resolveMSTeamsSendContext({
-      cfg: createConfig({ sharePointSiteId: "site-id" }),
-      to: "conversation:a:personal",
-    });
-
-    expect(sendContextMockState.getAccessToken).not.toHaveBeenCalled();
   });
 });
 

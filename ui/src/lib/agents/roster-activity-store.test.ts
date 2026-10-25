@@ -5,6 +5,7 @@ import { createDeferred } from "../../../../test/helpers/promise.js";
 import { GatewayRequestError } from "../../api/gateway.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { createContext } from "../../test-helpers/app-sidebar.ts";
+import { createApplicationGatewaySnapshot } from "../../test-helpers/application-context-fixtures.ts";
 import { createApplicationGateway } from "../../test-helpers/application-context.ts";
 import {
   createGatewayRequestMock,
@@ -34,7 +35,7 @@ function createStore(
       return subscribe();
     }
     if (method === "sessions.groups.list") {
-      return { names: [], sectionOrder: [] };
+      return { groups: [], sectionOrder: [] };
     }
     if (method === "sessions.list") {
       return (params as { archived?: string })?.archived === "all"
@@ -47,17 +48,14 @@ function createStore(
 }
 
 function createStoreForRequest(request: ReturnType<typeof createGatewayRequestMock>) {
-  const source = createApplicationGateway({
-    client: createTestGatewayClient(request),
-    phase: "connected",
-    hello: null,
-    offlineStable: false,
-    canvasPluginSurfaceUrl: null,
-    assistantAgentId: "main",
-    sessionKey: "agent:main:main",
-    lastError: null,
-    lastErrorCode: null,
-  });
+  const source = createApplicationGateway(
+    createApplicationGatewaySnapshot({
+      client: createTestGatewayClient(request),
+      phase: "connected",
+      assistantAgentId: "main",
+      sessionKey: "agent:main:main",
+    }),
+  );
   const sessions = createTestSessionCapability(source.gateway);
   const context = createContext(source.gateway, sessions, {
     agents: [{ id: "main" }, { id: "ember" }],
@@ -140,7 +138,7 @@ describe("roster activity lifecycle", () => {
         return { subscribed: true };
       }
       if (method === "sessions.groups.list") {
-        return { names: [], sectionOrder: [] };
+        return { groups: [], sectionOrder: [] };
       }
       if (method === "sessions.list") {
         return { ...result(""), sessions: [row] };
@@ -334,7 +332,7 @@ describe("roster activity lifecycle", () => {
     },
   );
 
-  it("does not let an in-flight window replace a newer broadcast row", async () => {
+  it("merges newer broadcast rows into an in-flight window without a trailing read", async () => {
     vi.useFakeTimers();
     const row: GatewaySessionRow = {
       key: "agent:main:main",
@@ -349,7 +347,7 @@ describe("roster activity lifecycle", () => {
       .mockResolvedValueOnce({ ...result(""), sessions: [row] })
       .mockReturnValueOnce(stale.promise)
       .mockResolvedValue({ ...result(""), sessions: [updated] });
-    const { store, emit } = createStore(load);
+    const { store, emit, sessions } = createStore(load);
     const stop = store.subscribe(() => {});
     try {
       await vi.advanceTimersByTimeAsync(0);
@@ -369,12 +367,13 @@ describe("roster activity lifecycle", () => {
       stale.resolve({ ...result("Stale"), sessions: [row] });
       await refresh;
       await vi.advanceTimersByTimeAsync(20_000);
-      expect(load).toHaveBeenCalledTimes(3);
+      expect(load).toHaveBeenCalledTimes(2);
       expect(store.snapshot.result?.sessions[0]).toEqual(updated);
       expect(store.snapshot.loading).toBe(false);
     } finally {
       stale.resolve(result(""));
       stop();
+      sessions.dispose();
       vi.useRealTimers();
     }
   });

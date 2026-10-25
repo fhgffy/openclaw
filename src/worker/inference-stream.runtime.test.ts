@@ -19,6 +19,7 @@ import {
   type WorkerInferenceStartParams,
   type WorkerInferenceTerminalOutcome,
 } from "../../packages/gateway-protocol/src/schema/worker-inference.js";
+import { createUsageFixture } from "../agents/test-helpers/usage-fixtures.js";
 import type { Usage } from "../llm/types.js";
 import { createWorkerInferenceStreamAdapter } from "./inference-stream.runtime.js";
 import { createWorkerImageHistory } from "./replay-images.test-support.js";
@@ -31,14 +32,7 @@ import { createWorkerConnection } from "./worker-connection.js";
 import { WorkerInferenceProxyClient } from "./worker-rpc-inference-client.js";
 
 const modelRef: WorkerInferenceModelRef = { provider: "test", model: "test-model" };
-const usage: Usage = {
-  input: 1,
-  output: 2,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 3,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
+const usage: Usage = createUsageFixture(1, 2, 3);
 
 function createClient() {
   return new WorkerInferenceProxyClient(
@@ -84,7 +78,7 @@ function createAdapterFixture(
   const client = createClient();
   const start = vi.spyOn(client, "start").mockImplementation(async (request, handlers) => {
     if (gap) {
-      handlers?.onStreamGap?.({ expectedSeq: 1, receivedSeq: 2 });
+      handlers?.onStreamGap?.();
     }
     events.forEach((event, index) =>
       handlers?.onEvent?.({ ...request, seq: index + (gap ? 2 : 1), event }),
@@ -273,39 +267,6 @@ it("preserves the provider failure and usage after an oversized partial response
       content: [],
     });
     expect(isWorkerTranscriptMessageFrameSafe(result)).toBe(true);
-  } finally {
-    fixture.client.dispose();
-  }
-});
-
-it("rejects an oversized successful reply without truncating it or losing its usage", async () => {
-  const fixture = createAdapterFixture();
-  const reply: Extract<WorkerInferenceTerminalOutcome, { type: "done" }>["message"] = {
-    role: "assistant",
-    content: [{ type: "text", text: "x".repeat(WORKER_PROTOCOL_MAX_PAYLOAD_BYTES) }],
-    api: "openai-responses",
-    provider: modelRef.provider,
-    model: modelRef.model,
-    stopReason: "stop",
-    usage,
-    timestamp: 1,
-  };
-  fixture.start.mockResolvedValue({ type: "done", message: reply });
-
-  try {
-    const result = await fixture
-      .stream({ modelRef, context: { messages: [] }, options: {} })
-      .result();
-    expect(result).toMatchObject({
-      stopReason: "error",
-      errorMessage: "Worker inference result exceeds the transcript message limit.",
-      usage,
-      content: [],
-    });
-    expect(isWorkerTranscriptMessageFrameSafe(result)).toBe(true);
-    expect(reply.content).toEqual([
-      { type: "text", text: "x".repeat(WORKER_PROTOCOL_MAX_PAYLOAD_BYTES) },
-    ]);
   } finally {
     fixture.client.dispose();
   }

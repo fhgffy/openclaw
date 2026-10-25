@@ -4,7 +4,6 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { EnvironmentSummary } from "../../packages/gateway-protocol/src/index.js";
 import { i18n } from "../../ui/src/i18n/index.ts";
 import { projectDevicePlacements } from "../../ui/src/pages/new-session/device-placement.ts";
-import { readDraftEnvironments } from "../../ui/src/pages/new-session/discovery.ts";
 import { listRegisteredAgentHarnesses, registerAgentHarness } from "../agents/harness/registry.js";
 import { restoreRegisteredAgentHarnesses } from "../agents/harness/registry.test-support.js";
 import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../infra/node-runner-inventory.js";
@@ -30,6 +29,7 @@ import {
   directSessionReq,
   getGatewayConfigModule,
   setupGatewaySessionsHandlerTestHarness,
+  createRepositoryDeviceHarness,
 } from "./test/server-sessions.test-helpers.js";
 import type { WorkerPlacementMoveIntent } from "./worker-environments/placement-move-intent.types.js";
 import type { WorkerSessionPlacementReader } from "./worker-environments/placement-projector.js";
@@ -38,6 +38,7 @@ import {
   createWorkerSessionPlacementStore,
   type WorkerSessionPlacementRecord,
 } from "./worker-environments/placement-store.js";
+import { activePlacement } from "./worker-environments/placement-suite.test-support.js";
 import {
   advancePlacementFixtureToActive,
   writePlacementEnvironmentFixture,
@@ -99,22 +100,7 @@ test.each([
       { pairingIdentity: "node-host", pairingGeneration: "node-host-generation" },
     );
     const connected = vi.spyOn(registry, "listConnectedForPairingStates").mockReturnValue([node]);
-    registerAgentHarness({
-      id: "repository-device",
-      label: "Repository device",
-      autoSelection: { providerIds: ["repository-provider"] },
-      supports: () => ({ supported: true }),
-      cloudPlacement: {
-        mode: "remote-exec",
-        devicePlacement: {
-          requiredNodeCommands: ["runtime.repository.v1"],
-          consumesWorkerSlot: false,
-        },
-      },
-      runAttempt: async () => {
-        throw new Error("projection must not execute the runtime");
-      },
-    });
+    registerAgentHarness(createRepositoryDeviceHarness("projection must not execute the runtime"));
     try {
       await i18n.setLocale("en");
       updateNodeRunnerInventory({
@@ -165,7 +151,7 @@ test.each([
           ?.requiredNodeCommand,
       ).toEqual({ command, state, ...(disabledReason ? { message: disabledReason } : {}) });
       const devices = projectDevicePlacements(
-        readDraftEnvironments(catalog.payload?.environments),
+        catalog.payload?.environments ?? [],
         runtime?.devicePlacement,
       );
       const device = devices.find((option) => option.deviceId === "node-host");
@@ -181,12 +167,8 @@ test.each([
 );
 
 function activePlacementRecord(): Extract<WorkerSessionPlacementRecord, { state: "active" }> {
-  return {
-    sessionId: "sess-main",
-    agentId: "main",
+  return activePlacement("sess-main", {
     sessionKey: "agent:main:main",
-    executionMode: "worker-turn",
-    state: "active",
     environmentId: "env-placement",
     generation: 7,
     activeOwnerEpoch: 12,
@@ -195,14 +177,10 @@ function activePlacementRecord(): Extract<WorkerSessionPlacementRecord, { state:
     workerBundleHash: ["a", "b"].join("").repeat(32),
     lastTranscriptAckCursor: 23,
     lastLiveEventAckCursor: 9,
-    recoveryError: null,
-    terminalReason: null,
-    terminalAtMs: null,
-    turnClaim: null,
     createdAtMs: 100,
     updatedAtMs: 300,
     stateChangedAtMs: 200,
-  };
+  });
 }
 
 async function seedSessionRows(): Promise<void> {

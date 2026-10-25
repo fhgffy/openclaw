@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { setImmediate as nextTurn } from "node:timers/promises";
+import { queryObjects } from "node:v8";
 import { expectDefined } from "@openclaw/normalization-core";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { describe, expect, it, vi } from "vitest";
@@ -24,6 +26,7 @@ import {
   waitForExecSession,
   type ProcessSession,
 } from "../bash-process-registry.js";
+import { createEnteredGate } from "../entered-gate.test-support.js";
 import { createLazyExecTool } from "../lazy-exec-tool.js";
 import {
   buildEmbeddedRunnerAssistant,
@@ -34,7 +37,10 @@ import type { PreparedEmbeddedRunInput } from "./run/execution-context.js";
 import { claimAgentSessionWriter } from "./run/session-bootstrap.js";
 import { createEmbeddedRunSessionPromptState } from "./run/session-prompt-state.js";
 import { resolveEmbeddedRunTerminal } from "./run/terminal-resolution.js";
-import { makeTerminalInput } from "./run/terminal-resolution.test-support.js";
+import {
+  compactionAssistantFixture,
+  makeTerminalInput,
+} from "./run/terminal-resolution.test-support.js";
 import { createEmbeddedRunTerminalRetryState } from "./run/terminal-retry-state.js";
 
 const assertActive = () => {};
@@ -115,7 +121,62 @@ function createState(overrides: Partial<PreparedEmbeddedRunInput["runParams"]> =
   });
 }
 
+function replaySafeAttempt(assistant: ReturnType<typeof buildEmbeddedRunnerAssistant> | undefined) {
+  return makeEmbeddedRunnerAttempt({
+    assistantTexts: [],
+    lastAssistant: assistant,
+    currentAttemptAssistant: assistant,
+    currentAttemptReplayMetadata: { hadPotentialSideEffects: false, replaySafe: true },
+  });
+}
+
 describe("embedded run session prompt state", () => {
+  it("releases completed continuations while session callbacks remain retained", async () => {
+    const retainedCallbacks: Array<{
+      adoptSessionId: (sessionId: string) => void;
+      onUserMessagePersisted: (message: ReturnType<typeof makeUserMessage>) => void;
+    }> = [];
+    const references: WeakRef<object>[] = [];
+    for (let index = 0; index < 20; index++) {
+      await using state = await createState();
+      state.continueFromCurrentTranscript({ messages: [makeUserMessage(`turn ${index}`)] });
+      references.push(new WeakRef(state.continuation!));
+      retainedCallbacks.push({
+        adoptSessionId: state.adoptSessionId,
+        onUserMessagePersisted: state.onUserMessagePersisted,
+      });
+    }
+    const control = new WeakRef({ unowned: true });
+    await nextTurn();
+    queryObjects(WeakRef);
+    expect(control.deref()).toBeUndefined();
+    expect(references.filter((reference) => reference.deref())).toHaveLength(0);
+    expect(retainedCallbacks).toHaveLength(20);
+  });
+
+  it("releases replaced and completed message payloads through retained attempt parameters", async () => {
+    const retainedContinuations: Array<{ prompt: string; messages: unknown[] }> = [];
+    const payloads: WeakRef<object>[] = [];
+    for (let index = 0; index < 20; index++) {
+      await using state = await createState();
+      state.continueFromCurrentTranscript({ messages: [makeUserMessage(`first ${index}`)] });
+      retainedContinuations.push(state.continuation!);
+      payloads.push(new WeakRef(state.continuation!.messages));
+      state.continueFromCurrentTranscript({ messages: [makeUserMessage(`second ${index}`)] });
+      expect(state.continuation!.messages).toHaveLength(2);
+      retainedContinuations.push(state.continuation!);
+      payloads.push(new WeakRef(state.continuation!.messages));
+    }
+    const control = new WeakRef({ unowned: true });
+    await nextTurn();
+    queryObjects(WeakRef);
+    expect(control.deref()).toBeUndefined();
+    expect(payloads.filter((reference) => reference.deref())).toHaveLength(0);
+    expect(retainedContinuations.every(({ prompt, messages }) => !prompt && !messages.length)).toBe(
+      true,
+    );
+  });
+
   it("carries the current request and settled work across repeated recovery without changing legacy prompts", async () => {
     await using state = await createState({ prompt: "Task B: inspect the blue database." });
     state.continueFromCurrentTranscript({ messages: [] });
@@ -126,12 +187,20 @@ describe("embedded run session prompt state", () => {
     const completed = buildEmbeddedRunnerAssistant({
       content: [{ type: "text", text: "The blue database was inspected." }],
     });
-    state.continueFromCurrentTranscript({ messages: [completed] });
+    const messages = [completed];
+    state.continueFromCurrentTranscript({ messages });
+    const previous = state.continuation!;
     state.continueFromCurrentTranscript({ messages: [] });
     expect(state.continuation).toEqual({
       prompt: "Task B: inspect the blue database.",
       messages: [completed],
     });
+    expect(previous).toEqual({ prompt: "", messages: [] });
+    expect(messages).toEqual([completed]);
+    expect(state.continuation!.messages[0]).toBe(completed);
+    const active = state.continuation;
+    state.continueFromCurrentTranscript();
+    expect(state.continuation).toBe(active);
     expect(state.activePrompt.override).toBe(CONTINUE_FROM_TRANSCRIPT_PROMPT);
     expect(state.suppressNextUserMessagePersistence).toBe(true);
   });
@@ -312,12 +381,7 @@ describe("embedded run session prompt state", () => {
       persisted: true,
       internal: true,
     };
-    const attempt = makeEmbeddedRunnerAttempt({
-      assistantTexts: [],
-      lastAssistant: undefined,
-      currentAttemptAssistant: undefined,
-      currentAttemptReplayMetadata: { hadPotentialSideEffects: false, replaySafe: true },
-    });
+    const attempt = replaySafeAttempt(undefined);
 
     const resolved = await resolveEmbeddedRunTerminal({
       ...makeTerminalInput({
@@ -335,25 +399,8 @@ describe("embedded run session prompt state", () => {
   it("retains compaction continuation across reasoning and empty retries", async () => {
     await using state = await createState();
     const retryState = createEmbeddedRunTerminalRetryState();
-    const compactionAssistant = buildEmbeddedRunnerAssistant({
-      stopReason: "length",
-      providerReplay: {
-        v: 1,
-        type: "openai-responses-compaction",
-        id: "cmp-shared-state",
-        data: "opaque-compaction",
-        provider: "openai",
-        api: "openai-responses",
-        model: "gpt-5.6-luna",
-        baseUrlHash: "base-url-hash",
-      },
-    });
-    const compactionAttempt = makeEmbeddedRunnerAttempt({
-      assistantTexts: [],
-      lastAssistant: compactionAssistant,
-      currentAttemptAssistant: compactionAssistant,
-      currentAttemptReplayMetadata: { hadPotentialSideEffects: false, replaySafe: true },
-    });
+    const compactionAssistant = compactionAssistantFixture("cmp-shared-state");
+    const compactionAttempt = replaySafeAttempt(compactionAssistant);
     await expect(
       resolveEmbeddedRunTerminal({
         ...makeTerminalInput({
@@ -374,12 +421,7 @@ describe("embedded run session prompt state", () => {
         },
       ],
     });
-    const reasoningAttempt = makeEmbeddedRunnerAttempt({
-      assistantTexts: [],
-      lastAssistant: reasoningAssistant,
-      currentAttemptAssistant: reasoningAssistant,
-      currentAttemptReplayMetadata: { hadPotentialSideEffects: false, replaySafe: true },
-    });
+    const reasoningAttempt = replaySafeAttempt(reasoningAssistant);
     await expect(
       resolveEmbeddedRunTerminal({
         ...makeTerminalInput({
@@ -398,36 +440,36 @@ describe("embedded run session prompt state", () => {
       resolveEmbeddedRunTerminal({
         ...makeTerminalInput({
           retryState,
-          attempt: makeEmbeddedRunnerAttempt({
-            assistantTexts: [],
-            lastAssistant: emptyResponseAssistant,
-            currentAttemptAssistant: emptyResponseAssistant,
-            currentAttemptReplayMetadata: {
-              hadPotentialSideEffects: false,
-              replaySafe: true,
-            },
-          }),
+          attempt: replaySafeAttempt(emptyResponseAssistant),
         }),
         sessionPromptState: state,
       }),
     ).resolves.toEqual({ action: "retry" });
 
     const prompt = state.activePrompt.override ?? "";
-    expect(prompt).toContain("The previous attempt did not produce a user-visible answer.");
+    expect(prompt).toContain("Your turn ended without a final reply.");
     expect(prompt).not.toContain("recorded reasoning");
     expect(prompt.match(/Continue from the compacted transcript/gu)).toHaveLength(1);
   });
 
+  it("drops a retained compaction continuation once its internal prompt is persisted", async () => {
+    await using state = await createState();
+    state.activateCompactionContinuation("continue after compaction");
+    state.activateInternalPrompt("visible-answer retry");
+    expect(state.activePrompt.override).toBe("visible-answer retry\n\ncontinue after compaction");
+
+    state.onUserMessagePersisted(makeUserMessage(state.activePrompt.override));
+    state.activateInternalPrompt("empty-response retry");
+
+    expect(state.activePrompt.override).toBe("empty-response retry");
+  });
+
   it("keeps a draft revision pending until its owned projection is ready", async () => {
     const reconcile = await import("../../config/sessions/session-transcript-reconcile.js");
-    const projection = createDeferred();
-    const projectionStarted = createDeferred();
+    const projectionGate = createEnteredGate();
     const waitForProjection = vi
       .spyOn(reconcile, "waitForSessionTranscriptProjection")
-      .mockImplementation(async () => {
-        projectionStarted.resolve();
-        await projection.promise;
-      });
+      .mockImplementation(projectionGate.wait);
     await using state = await createState();
     try {
       state.activateCompactionContinuation("continue after compaction");
@@ -464,17 +506,17 @@ describe("embedded run session prompt state", () => {
         });
       await expect(
         Promise.race([
-          projectionStarted.promise.then(() => "projection"),
+          projectionGate.entered.then(() => "projection"),
           retryReady.then(() => "retry"),
         ]),
       ).resolves.toBe("projection");
       await Promise.resolve();
       expect(resumed).toBe(false);
-      projection.resolve();
+      projectionGate.release();
       await retryReady;
       expect(resumed).toBe(true);
     } finally {
-      projection.resolve();
+      projectionGate.release();
       waitForProjection.mockRestore();
     }
   });

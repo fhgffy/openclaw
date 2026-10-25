@@ -1385,6 +1385,7 @@
                   "install/node-compatibility",
                   "install/bun",
                   "install/bun-compatibility",
+                  "install/standalone",
                   "install/nix"
                 ]
               },
@@ -1687,6 +1688,7 @@
                   "concepts/main-session",
                   "concepts/multi-user",
                   "concepts/session",
+                  "concepts/session-controller",
                   "concepts/session-attachment",
                   "concepts/session-search",
                   "concepts/session-pruning",
@@ -1769,6 +1771,7 @@
               {
                 "group": "Plugin guides",
                 "pages": [
+                  "plugins/agent-guidance",
                   "plugins/agentsapi",
                   {
                     "group": "Codex",
@@ -1837,6 +1840,7 @@
                       "plugins/memory-lancedb",
                       "plugins/memory-wiki",
                       "plugins/onnx",
+                      "plugins/subq",
                       "plugins/typesafe"
                     ]
                   },
@@ -1868,6 +1872,7 @@
                 "group": "Building plugins",
                 "pages": [
                   "plugins/building-plugins",
+                  "plugins/runtime-compatibility",
                   "plugins/feature-plugins",
                   "plugins/tool-plugins",
                   "plugins/sdk-channel-plugins",
@@ -1943,6 +1948,7 @@
                     ]
                   },
                   "automation/imap",
+                  "automation/mcp-events",
                   "automation/standing-orders",
                   "automation/hooks",
                   {
@@ -2015,6 +2021,7 @@
                           "tools/code-mode/maintainers"
                         ]
                       },
+                      "tools/autoreview",
                       "tools/llm-task",
                       "tools/lobster",
                       "tools/mcp",
@@ -2198,6 +2205,7 @@
                   {
                     "group": "Chat and coding models",
                     "pages": [
+                      "providers/abliteration",
                       "providers/alibaba",
                       "providers/anthropic",
                       "plugins/reference/anthropic-vertex",
@@ -2217,6 +2225,7 @@
                       "providers/google",
                       "providers/groq",
                       "providers/huggingface",
+                      "providers/levanto",
                       "providers/longcat",
                       "providers/meta",
                       "providers/minimax",
@@ -2243,6 +2252,7 @@
                       "providers/opencode",
                       "providers/opencode-go",
                       "providers/perplexity-provider",
+                      "providers/poolside",
                       "providers/qianfan",
                       "providers/qwen",
                       "providers/radius",
@@ -2284,6 +2294,7 @@
                   {
                     "group": "Gateways and routers",
                     "pages": [
+                      "providers/bifrost",
                       "providers/claude-max-api-proxy",
                       "providers/clawrouter",
                       "providers/cloudflare-ai-gateway",
@@ -2291,6 +2302,7 @@
                       "providers/litellm",
                       "providers/neon",
                       "providers/openrouter",
+                      "providers/requesty",
                       "providers/vercel-ai-gateway"
                     ]
                   },
@@ -2315,6 +2327,7 @@
                           "providers/ollama/troubleshooting"
                         ]
                       },
+                      "providers/omlx",
                       "providers/sglang",
                       "providers/vllm"
                     ]
@@ -2476,6 +2489,7 @@
                     "group": "Health and diagnostics",
                     "pages": [
                       "gateway/health",
+                      "gateway/postgresql",
                       "gateway/doctor",
                       {
                         "group": "Doctor",
@@ -2523,6 +2537,7 @@
                   {
                     "group": "Scaling and operations",
                     "pages": [
+                      "gateway/postgresql",
                       "gateway/gateway-lock",
                       "gateway/background-process",
                       "gateway/restart-recovery",
@@ -3213,6 +3228,9 @@
                 "group": "Release notes",
                 "pages": [
                   "releases/index",
+                  "releases/2026.10.6",
+                  "releases/2026.10.5",
+                  "releases/2026.10.4",
                   "releases/2026.10.3",
                   "releases/2026.10.2",
                   "releases/2026.10.1",
@@ -3367,6 +3385,7 @@
                 "group": "Start here",
                 "pages": [
                   "help/index",
+                  "help/support",
                   "help/troubleshooting",
                   "help/debugging"
                 ]

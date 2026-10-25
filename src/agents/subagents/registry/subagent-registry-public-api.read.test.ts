@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeferredCore } from "../../../shared/deferred.js";
 import * as stateReads from "../../../state/openclaw-state-db-readonly.js";
 import { withOpenClawTestState } from "../../../test-utils/openclaw-test-state.js";
 import { subagentRuns } from "./subagent-registry-memory.js";
@@ -12,6 +11,7 @@ import {
   clearSubagentRunsReadCacheForTest,
   prepareSubagentSessionListReadCache,
 } from "./subagent-registry-state.js";
+import { holdFirstCompactRead } from "./subagent-registry-state.read.test-support.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
 function createRun(runId: string, overrides: Partial<SubagentRunRecord> = {}): SubagentRunRecord {
@@ -40,7 +40,6 @@ function createReadApi(runs = new Map<string, SubagentRunRecord>()) {
   return createSubagentRegistryPublicApi({
     runs,
     restoreOnce: unexpectedMutation,
-    startAnnounceCleanup: unexpectedMutation,
     settleRequesterTurn: unexpectedMutation,
     markRequesterYielded: unexpectedMutation,
   });
@@ -70,28 +69,14 @@ describe("subagent registry known-run reads", () => {
     await withPersistedReads(async () => {
       const original = createRun("original", { swarmRunId: "collector" });
       saveSubagentRegistryToSqlite(new Map([[original.runId, original]]));
-      const entered = createDeferredCore();
-      const release = createDeferredCore();
-      const execute = stateReads.executeExistingOpenClawStateRead;
-      let held = false;
-      const read = vi
-        .spyOn(stateReads, "executeExistingOpenClawStateRead")
-        .mockImplementation(async (...args) => {
-          const result = await execute(...args);
-          if (!held && args[1].type === "subagents.runs") {
-            held = true;
-            entered.resolve();
-            await release.promise;
-          }
-          return result;
-        });
+      const { entered, release, read } = holdFirstCompactRead("subagents.runs");
       const pending = createReadApi(subagentRuns).prepareSubagentRunsByRunIds([
         "collector",
         "original",
       ]);
       try {
         await Promise.race([
-          entered.promise,
+          entered,
           pending.then(() => {
             throw new Error("Expected pending payload hydration");
           }),
@@ -104,14 +89,14 @@ describe("subagent registry known-run reads", () => {
           original.runId,
           replacement.runId,
         ]);
-        release.resolve();
+        release();
         const prepared = await pending;
         expect(prepared.consume((runs) => [...runs])).toEqual({
           ready: true,
           value: [["collector", replacement]],
         });
       } finally {
-        release.resolve();
+        release();
         await pending.catch(() => {});
         read.mockRestore();
       }
@@ -139,7 +124,8 @@ describe("subagent registry known-run reads", () => {
           ),
         );
         saveSubagentRegistryToSqlite(new Map(rows.map((row) => [row.runId, row])));
-        const api = createReadApi();
+        const memory = new Map<string, SubagentRunRecord>();
+        const api = createReadApi(memory);
         expect(() => api.countActiveRunsForSession("agent:main:main")).toThrow("must be prepared");
         const read = vi.spyOn(stateReads, "executeExistingOpenClawStateRead");
         try {
@@ -153,6 +139,37 @@ describe("subagent registry known-run reads", () => {
           expect(read.mock.calls.map(([, command]) => command.type)).toEqual([
             "subagents.sessionList",
           ]);
+          const count = () =>
+            api.countActiveRunsForSession("agent:main:main", {
+              collect: false,
+              requesterAgentId: "main",
+            });
+          const settled = createRun("active-0", { collect: false, requesterAgentId: "main" });
+          memory.set(settled.runId, settled);
+          expect(count()).toBe(activeChildren - 1);
+
+          const descendant = createRun("descendant", {
+            collect: false,
+            requesterSessionKey: settled.childSessionKey,
+            execution: { status: "running", startedAt: Date.now() },
+          });
+          memory.set(descendant.runId, descendant);
+          expect(count()).toBe(activeChildren);
+          memory.set(descendant.runId, {
+            ...descendant,
+            execution: { status: "terminal", endedAt: Date.now() },
+            cleanupCompletedAt: Date.now(),
+          });
+          expect(count()).toBe(activeChildren - 1);
+          memory.set(
+            "active-1",
+            createRun("active-1", {
+              collect: false,
+              controllerSessionKey: "agent:other:main",
+              execution: { status: "running", startedAt: Date.now() },
+            }),
+          );
+          expect(count()).toBe(activeChildren - 2);
         } finally {
           read.mockRestore();
         }

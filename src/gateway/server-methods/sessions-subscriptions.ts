@@ -1,9 +1,8 @@
 import {
   ErrorCodes,
-  errorShape,
   validateSessionsMessagesSubscribeParams,
   validateSessionsMessagesUnsubscribeParams,
-  validateSessionsListParams,
+  validateSessionsSubscribeParams,
   validateSessionsViewerPresenceSetParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
@@ -14,6 +13,7 @@ import { sessionObserverScopeKey } from "../session-observer-model.js";
 import { resolveRequestedSessionStoreTarget } from "../session-store-key.js";
 import { resolveSessionSubscriptionKey } from "../session-subscription-keys.js";
 import { prepareApprovalSessionAccess } from "./approval-record-lookup.js";
+import { respondError } from "./response.js";
 import { readGatewayRequestMutationAuthority } from "./session-mutation-guards.js";
 import { retainSessionScopedRead } from "./session-scoped-read.js";
 import { sessionsListHandler } from "./sessions-read.js";
@@ -24,22 +24,28 @@ import { assertValidParams, defineValidatedGatewayHandler } from "./validation.j
 export const sessionSubscriptionHandlers: GatewayRequestHandlers = {
   "sessions.subscribe": async (options) => {
     const { client, context, params, respond } = options;
-    if (!assertValidParams(params, validateSessionsListParams, "sessions.subscribe", respond)) {
+    if (
+      !assertValidParams(params, validateSessionsSubscribeParams, "sessions.subscribe", respond)
+    ) {
       return;
     }
+    const { includeMessageBodies, ...listParams } = params;
     const connId = client?.connId?.trim();
-    if (connId) {
+    if (client && connId) {
+      if (includeMessageBodies !== undefined) {
+        client.includeSessionMessageBodies = includeMessageBodies;
+      }
       // Subscribe before projecting the snapshot so mutations during the read
       // become live events; the UI queues one trailing refresh when needed.
       context.subscribeSessionEvents(connId);
     }
-    if (!connId || Object.keys(params).length === 0) {
+    if (!connId || Object.keys(listParams).length === 0) {
       respond(true, { subscribed: Boolean(connId) }, undefined);
       return;
     }
     await sessionsListHandler({
       ...options,
-      params,
+      params: listParams,
       respond: (ok, payload, error, meta) => {
         respond(ok, ok ? { subscribed: true, list: payload } : undefined, error, meta);
       },
@@ -52,11 +58,7 @@ export const sessionSubscriptionHandlers: GatewayRequestHandlers = {
       const connId = client?.connId?.trim();
       const declarations = context.sessionViewerPresence;
       if (!connId || !declarations) {
-        respond(
-          false,
-          undefined,
-          errorShape(ErrorCodes.UNAVAILABLE, "session viewer presence unavailable"),
-        );
+        respondError(respond, ErrorCodes.UNAVAILABLE, "session viewer presence unavailable");
         return;
       }
       const cfg = context.getRuntimeConfig();
@@ -64,11 +66,7 @@ export const sessionSubscriptionHandlers: GatewayRequestHandlers = {
       for (const rawKey of params.sessionKeys) {
         const trimmed = rawKey.trim();
         if (!trimmed) {
-          respond(
-            false,
-            undefined,
-            errorShape(ErrorCodes.INVALID_REQUEST, "invalid sessions.viewers.set params"),
-          );
+          respondError(respond, ErrorCodes.INVALID_REQUEST, "invalid sessions.viewers.set params");
           return;
         }
         const requested = resolveRequestedSessionStoreTarget(
@@ -109,13 +107,10 @@ export const sessionSubscriptionHandlers: GatewayRequestHandlers = {
         return;
       }
       if (params.includeApprovals === true && !canReviewOperatorApproval(client)) {
-        respond(
-          false,
-          undefined,
-          errorShape(
-            ErrorCodes.INVALID_REQUEST,
-            `sessions.messages.subscribe includeApprovals requires a paired device and gateway scope: ${APPROVALS_SCOPE}`,
-          ),
+        respondError(
+          respond,
+          ErrorCodes.INVALID_REQUEST,
+          `sessions.messages.subscribe includeApprovals requires a paired device and gateway scope: ${APPROVALS_SCOPE}`,
         );
         return;
       }
@@ -151,11 +146,7 @@ export const sessionSubscriptionHandlers: GatewayRequestHandlers = {
             subscriptionId: params.subscriptionId,
           });
           const respondReplayUnavailable = () =>
-            respond(
-              false,
-              undefined,
-              errorShape(ErrorCodes.UNAVAILABLE, "session approval replay unavailable"),
-            );
+            respondError(respond, ErrorCodes.UNAVAILABLE, "session approval replay unavailable");
           try {
             if (includeApprovals) {
               using sessionAccess = await prepareApprovalSessionAccess({
@@ -167,12 +158,6 @@ export const sessionSubscriptionHandlers: GatewayRequestHandlers = {
               sessionMutationAuthorization?.assertCurrent();
               mark?.("replayPreparation");
               prepared = await context.listSessionPendingApprovals?.(subscriptionKey, client);
-              if (prepared && !prepared.isCurrent()) {
-                read?.assertCurrent();
-                sessionMutationAuthorization?.assertCurrent();
-                prepared.release();
-                prepared = await context.listSessionPendingApprovals?.(subscriptionKey, client);
-              }
               if (prepared && !prepared.isCurrent()) {
                 throw new Error("session approval replay changed during preparation");
               }
