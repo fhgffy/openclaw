@@ -1,7 +1,4 @@
-import {
-  extractBalancedJsonPrefix,
-  resolvePositiveTimerTimeoutMs,
-} from "@openclaw/normalization-core";
+import { extractBalancedJsonPrefix } from "@openclaw/normalization-core";
 import { sliceUtf16Safe, truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { z } from "zod";
 import { createReasoningTagTextPartitioner } from "../../packages/markdown-core/src/reasoning-tags.js";
@@ -86,12 +83,10 @@ export async function summarizeTranscriptsWithModel(params: {
   agentId: string;
   session: TranscriptSessionDescriptor;
   utterances: TranscriptUtterance[];
-  timeoutMs?: number;
   abortSignal?: AbortSignal;
   assertCurrent?: () => void;
 }): Promise<TranscriptsSummary | undefined> {
-  const timeoutMs = resolvePositiveTimerTimeoutMs(params.timeoutMs, MODEL_SUMMARY_TIMEOUT_MS);
-  const deadline = Date.now() + timeoutMs;
+  const deadline = performance.now() + MODEL_SUMMARY_TIMEOUT_MS;
   const abort = new AbortController();
   const signal = AbortSignal.any(
     [abort.signal, params.abortSignal, getAsyncWorkSignal()].filter(
@@ -123,7 +118,7 @@ export async function summarizeTranscriptsWithModel(params: {
       seen.add([provider, model, authProfileId ?? ""].join("\0"));
     };
     for (const modelRef of models) {
-      if (signal.aborted || Date.now() >= deadline) {
+      if (signal.aborted || performance.now() >= deadline) {
         return undefined;
       }
       try {
@@ -165,7 +160,7 @@ export async function summarizeTranscriptsWithModel(params: {
               "Do not invent decisions, owners, actions, or risks; use empty lists when none are supported.",
             ].join(" "),
             prompt,
-            timeoutMs: Math.max(1, deadline - Date.now()),
+            timeoutMs: Math.max(1, deadline - performance.now()),
             abortSignal: signal,
             assertCurrent: params.assertCurrent,
             outputTextPolicy: "strict-visible",
@@ -197,7 +192,7 @@ export async function summarizeTranscriptsWithModel(params: {
     return undefined;
   };
   try {
-    timer = setTimeout(() => abort.abort(), timeoutMs);
+    timer = setTimeout(() => abort.abort(), MODEL_SUMMARY_TIMEOUT_MS);
     timer.unref();
     // Cancellation closes admission, but the summary lane retains custody until
     // the underlying completion has finished releasing its runtime resources.
